@@ -1,0 +1,17 @@
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Archivos de caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos generados por el catálogo (Temporales y finales)
+Catalogo_Temporal.pdf
+Catalogo_Distribuidora_Bellingieri_Final.pdf
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
