@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Generador de catálogo PDF - Distribuidora Bellingieri
-- Página separadora limpia (solo Marca).
-- Header de productos: Marca más grande (sin categoría).
 Uso: python generar_catalogo.py
 """
 
@@ -16,7 +14,7 @@ from reportlab.platypus import (
     Table, TableStyle, Image, PageBreak, NextPageTemplate
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from PIL import Image as PILImage
 from pypdf import PdfWriter, PdfReader
 
@@ -34,6 +32,7 @@ COLOR_PRIMARIO   = colors.HexColor("#1F3864")
 COLOR_TEXTO      = colors.HexColor("#222222")
 COLOR_PRECIO     = colors.HexColor("#C00000")
 COLOR_DORADO     = colors.HexColor("#C5A059") 
+COLOR_CELESTE    = colors.HexColor("#00AEEF") 
 
 EMPRESA   = "Distribuidora Bellingieri"
 SUBTITULO = "Catálogo de Productos"
@@ -79,6 +78,18 @@ style_marca_titulo = ParagraphStyle(
     textColor=COLOR_PRIMARIO, alignment=TA_LEFT, spaceBefore=150,
 )
 
+# Estilos para la cajita de presentación
+style_pres_negro = ParagraphStyle(
+    "pres_negro", parent=styles["Normal"],
+    fontName="Helvetica", fontSize=5.5, leading=7, textColor=colors.black,
+    alignment=TA_RIGHT
+)
+style_pres_valor = ParagraphStyle(
+    "pres_valor", parent=styles["Normal"],
+    fontName="Helvetica", fontSize=10, leading=12, textColor=colors.black,
+    alignment=TA_LEFT
+)
+
 # ============================================================
 # CARGA DE DATOS
 # ============================================================
@@ -93,7 +104,7 @@ def cargar_datos(path):
         
     df = df.fillna("")
     
-    for col in ["Nombre imagen", "Modo de uso", "Activos principales", "Marca", "Categoría"]:
+    for col in ["Nombre imagen", "Modo de uso", "Activos principales", "Marca", "Categoría", "Presentacion"]:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
             
@@ -144,20 +155,72 @@ def celda_producto(row, ancho_celda, alto_celda):
     nombre_imagen = str(row.get("Nombre imagen", "")).strip()
     img_path = os.path.join(IMAGENES_DIR, nombre_imagen) if nombre_imagen and nombre_imagen.lower() != "nan" else ""
     
-    ancho_img = (ancho_celda * 0.30) - 0.5*cm
-    alto_img = alto_celda - 0.6*cm 
-    img = obtener_imagen_ajustada(img_path, ancho_img, alto_img)
-
-    nombre = Paragraph(str(row.get("Nombre del producto", "")), style_nombre)
+    # NUEVAS PROPORCIONES: 30% Izquierda (Imagen+Pres) y 70% Derecha (Textos)
+    ancho_bloque_izq = ancho_celda * 0.30
+    ancho_col_derecha = ancho_celda * 0.70
     
+    # Dentro del bloque izquierdo: 60% Imagen y 40% Presentación
+    ancho_img_area = ancho_bloque_izq * 0.60
+    ancho_pres_area = ancho_bloque_izq * 0.40
+    
+    # Ajustamos la imagen
+    img = obtener_imagen_ajustada(img_path, ancho_img_area - 0.2*cm, alto_celda - 0.6*cm)
+
+    # --- CAJITA DE PRESENTACIÓN ---
+    presentacion = str(row.get("Presentacion", "")).strip()
+    
+    if presentacion and presentacion.lower() != "nan":
+        p_negro = Paragraph("CONT.<br/>NETO", style_pres_negro)
+        p_valor = Paragraph(presentacion, style_pres_valor)
+        
+        # La línea celeste ahora va pegada al texto de la presentación
+        tabla_pres = Table([[p_negro, p_valor]], colWidths=[1.1*cm, 1.3*cm])
+        tabla_pres.setStyle(TableStyle([
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("ALIGN", (0,0), (0,0), "RIGHT"),
+            ("ALIGN", (1,0), (1,0), "LEFT"),
+            ("LINEAFTER", (0,0), (0,0), 1.5, COLOR_CELESTE), 
+            ("LEFTPADDING", (0,0), (-1,-1), 0),
+            ("RIGHTPADDING", (0,0), (0,0), 3), 
+            ("LEFTPADDING", (1,0), (1,0), 4),
+            ("RIGHTPADDING", (1,0), (1,0), 0),
+            ("TOPPADDING", (0,0), (-1,-1), 0),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 0),
+        ]))
+        
+        contenido_col_pres = Table([[""], [tabla_pres]], colWidths=[ancho_pres_area])
+        contenido_col_pres.setStyle(TableStyle([
+            ("ALIGN", (0,0), (-1,-1), "RIGHT"), # Alineado a la derecha de su celda
+            ("VALIGN", (0,1), (0,1), "BOTTOM"),
+            ("LEFTPADDING", (0,0), (-1,-1), 0),
+            ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ]))
+    else:
+        contenido_col_pres = ""
+
+    # Empaquetamos Imagen + Presentación en el bloque izquierdo
+    col_izquierda = Table(
+        [[img, contenido_col_pres]], 
+        colWidths=[ancho_img_area, ancho_pres_area],
+        rowHeights=[alto_celda - 0.6*cm]
+    )
+    col_izquierda.setStyle(TableStyle([
+        ("ALIGN", (0,0), (0,0), "CENTER"), 
+        ("VALIGN", (0,0), (0,0), "MIDDLE"), 
+        ("VALIGN", (1,0), (1,0), "BOTTOM"), 
+        ("LEFTPADDING", (0,0), (-1,-1), 0),
+        ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING", (0,0), (-1,-1), 0),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5), 
+    ]))
+
+    # --- TEXTOS DE LA DERECHA ---
+    nombre = Paragraph(str(row.get("Nombre del producto", "")), style_nombre)
     categoria_txt = str(row.get("Categoría", "")).strip()
     categoria_prod = Paragraph(categoria_txt.upper() if categoria_txt and categoria_txt.lower() != "nan" else "", style_categoria_producto)
-    
     activos_txt = str(row.get("Activos principales", "")).strip()
     activos = Paragraph(f"<b>ACTIVOS:</b> {activos_txt}" if activos_txt and activos_txt.lower() != "nan" else "", style_activos)
-    
     desc = Paragraph(str(row.get("Descripción", "")), style_desc)
-    
     modo_txt = str(row.get("Modo de uso", "")).strip()
     modo = Paragraph(f"<b>MODO DE USO:</b> {modo_txt}" if modo_txt and modo_txt.lower() != "nan" else "", style_modo)
 
@@ -167,7 +230,7 @@ def celda_producto(row, ancho_celda, alto_celda):
 
     texto_derecha = Table(
         [[nombre], [categoria_prod], [activos], [desc], [modo], [precio]],
-        colWidths=[(ancho_celda * 0.70) - 0.5*cm]
+        colWidths=[ancho_col_derecha - 0.5*cm]
     )
     texto_derecha.setStyle(TableStyle([
         ("ALIGN", (0,0), (-1,-1), "LEFT"), 
@@ -179,8 +242,8 @@ def celda_producto(row, ancho_celda, alto_celda):
     ]))
 
     contenido = Table(
-        [[img, texto_derecha]], 
-        colWidths=[ancho_celda * 0.30, ancho_celda * 0.70], 
+        [[col_izquierda, texto_derecha]], 
+        colWidths=[ancho_bloque_izq, ancho_col_derecha], 
         rowHeights=[alto_celda]
     )
     contenido.setStyle(TableStyle([
@@ -188,9 +251,9 @@ def celda_producto(row, ancho_celda, alto_celda):
         ("VALIGN", (0,0), (0,0), "MIDDLE"), 
         ("ALIGN", (1,0), (1,0), "LEFT"),   
         ("VALIGN", (1,0), (1,0), "MIDDLE"), 
-        ("LEFTPADDING", (0,0), (0,0), 12), 
+        ("LEFTPADDING", (0,0), (0,0), 10), # Reducido un poco por el nuevo ancho
         ("RIGHTPADDING", (0,0), (0,0), 0),
-        ("LEFTPADDING", (1,0), (1,0), 10), 
+        ("LEFTPADDING", (1,0), (1,0), 15), # Aumentado para separar del bloque izq
         ("RIGHTPADDING", (1,0), (1,0), 15), 
         ("TOPPADDING", (0,0), (-1,-1), 10), 
         ("BOTTOMPADDING", (0,0), (-1,-1), 10),
@@ -250,7 +313,6 @@ def header_footer_productos(canvas, doc):
     
     if marca_actual:
         canvas.setFillColor(colors.white)
-        # Aumentamos el tamaño de la fuente a 20 (antes era 14) y centramos un poco más vertical
         canvas.setFont("Helvetica-Bold", 20)
         canvas.drawString(1.5*cm, A4[1] - 1.5*cm, marca_actual.upper())
 
@@ -293,7 +355,6 @@ def generar_y_fusionar():
 
     for idx, (marca, prods) in enumerate(grupos, start=1):
         categoria_ejemplo = str(prods[0].get("Categoría", "")).strip()
-        
         nombre_plantilla_prods = f"prods_{idx}"
         
         def crear_header_con_datos(m, c):
@@ -307,9 +368,8 @@ def generar_y_fusionar():
             PageTemplate(id=nombre_plantilla_prods, frames=[frame], onPage=crear_header_con_datos(marca, categoria_ejemplo))
         ])
         
-        # Separador (Solo la Marca, sin número de página ni categoría)
+        # Separador
         story.append(Paragraph(marca.upper(), style_marca_titulo))
-        
         story.append(NextPageTemplate(nombre_plantilla_prods))
         story.append(PageBreak())
 
@@ -317,13 +377,11 @@ def generar_y_fusionar():
         for i in range(0, len(prods), 4):
             grid = pagina_productos(prods[i:i+4])
             story.append(grid)
-            
             if i + 4 < len(prods):
                 story.append(PageBreak())
             
         # Siguiente Separador
         story.append(NextPageTemplate("limpia"))
-        
         if idx < total_grupos:
             story.append(PageBreak())
 
@@ -339,7 +397,6 @@ def generar_y_fusionar():
         reader_catalogo = PdfReader(OUTPUT_PDF)
         for page in reader_catalogo.pages:
             writer.add_page(page)
-            
         with open(OUTPUT_FINAL, "wb") as f:
             writer.write(f)
         print(f"✅ ¡Catálogo Final generado exitosamente!: {OUTPUT_FINAL}")
