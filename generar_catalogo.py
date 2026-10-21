@@ -81,12 +81,12 @@ style_marca_titulo = ParagraphStyle(
 # Estilos para la cajita de presentación
 style_pres_negro = ParagraphStyle(
     "pres_negro", parent=styles["Normal"],
-    fontName="Helvetica", fontSize=5.5, leading=7, textColor=colors.black,
+    fontName="Helvetica", fontSize=5, leading=6, textColor=colors.black,
     alignment=TA_RIGHT
 )
 style_pres_valor = ParagraphStyle(
     "pres_valor", parent=styles["Normal"],
-    fontName="Helvetica", fontSize=10, leading=12, textColor=colors.black,
+    fontName="Helvetica", fontSize=8.5, leading=10, textColor=colors.black,
     alignment=TA_LEFT
 )
 
@@ -155,15 +155,14 @@ def celda_producto(row, ancho_celda, alto_celda):
     nombre_imagen = str(row.get("Nombre imagen", "")).strip()
     img_path = os.path.join(IMAGENES_DIR, nombre_imagen) if nombre_imagen and nombre_imagen.lower() != "nan" else ""
     
-    # NUEVAS PROPORCIONES: 30% Izquierda (Imagen+Pres) y 70% Derecha (Textos)
-    ancho_bloque_izq = ancho_celda * 0.30
-    ancho_col_derecha = ancho_celda * 0.70
+    # 33% Izquierda (Imagen+Pres) y 67% Derecha (Textos)
+    ancho_bloque_izq = ancho_celda * 0.33
+    ancho_col_derecha = ancho_celda * 0.67
     
-    # Dentro del bloque izquierdo: 60% Imagen y 40% Presentación
-    ancho_img_area = ancho_bloque_izq * 0.60
-    ancho_pres_area = ancho_bloque_izq * 0.40
+    # Dentro del bloque izquierdo: 70% Imagen y 30% Presentación
+    ancho_img_area = ancho_bloque_izq * 0.70
+    ancho_pres_area = ancho_bloque_izq * 0.30
     
-    # Ajustamos la imagen
     img = obtener_imagen_ajustada(img_path, ancho_img_area - 0.2*cm, alto_celda - 0.6*cm)
 
     # --- CAJITA DE PRESENTACIÓN ---
@@ -173,16 +172,15 @@ def celda_producto(row, ancho_celda, alto_celda):
         p_negro = Paragraph("CONT.<br/>NETO", style_pres_negro)
         p_valor = Paragraph(presentacion, style_pres_valor)
         
-        # La línea celeste ahora va pegada al texto de la presentación
-        tabla_pres = Table([[p_negro, p_valor]], colWidths=[1.1*cm, 1.3*cm])
+        tabla_pres = Table([[p_negro, p_valor]], colWidths=[0.7*cm, 0.9*cm])
         tabla_pres.setStyle(TableStyle([
             ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
             ("ALIGN", (0,0), (0,0), "RIGHT"),
             ("ALIGN", (1,0), (1,0), "LEFT"),
-            ("LINEAFTER", (0,0), (0,0), 1.5, COLOR_CELESTE), 
+            ("LINEAFTER", (0,0), (0,0), 1.2, COLOR_CELESTE), 
             ("LEFTPADDING", (0,0), (-1,-1), 0),
-            ("RIGHTPADDING", (0,0), (0,0), 3), 
-            ("LEFTPADDING", (1,0), (1,0), 4),
+            ("RIGHTPADDING", (0,0), (0,0), 2), 
+            ("LEFTPADDING", (1,0), (1,0), 2),
             ("RIGHTPADDING", (1,0), (1,0), 0),
             ("TOPPADDING", (0,0), (-1,-1), 0),
             ("BOTTOMPADDING", (0,0), (-1,-1), 0),
@@ -190,7 +188,7 @@ def celda_producto(row, ancho_celda, alto_celda):
         
         contenido_col_pres = Table([[""], [tabla_pres]], colWidths=[ancho_pres_area])
         contenido_col_pres.setStyle(TableStyle([
-            ("ALIGN", (0,0), (-1,-1), "RIGHT"), # Alineado a la derecha de su celda
+            ("ALIGN", (0,1), (0,1), "RIGHT"), 
             ("VALIGN", (0,1), (0,1), "BOTTOM"),
             ("LEFTPADDING", (0,0), (-1,-1), 0),
             ("RIGHTPADDING", (0,0), (-1,-1), 0),
@@ -198,11 +196,10 @@ def celda_producto(row, ancho_celda, alto_celda):
     else:
         contenido_col_pres = ""
 
-    # Empaquetamos Imagen + Presentación en el bloque izquierdo
     col_izquierda = Table(
         [[img, contenido_col_pres]], 
         colWidths=[ancho_img_area, ancho_pres_area],
-        rowHeights=[alto_celda - 0.6*cm]
+        rowHeights=[alto_celda - 0.4*cm]
     )
     col_izquierda.setStyle(TableStyle([
         ("ALIGN", (0,0), (0,0), "CENTER"), 
@@ -228,9 +225,14 @@ def celda_producto(row, ancho_celda, alto_celda):
     precio_str = f"${float(precio_txt):,.2f}" if precio_txt else "Consultar precio"
     precio = Paragraph(precio_str, style_precio)
 
+    # CÁLCULO EXACTO DEL ANCHO DEL TEXTO:
+    # Ancho total de la columna derecha MENOS los márgenes (15 izq + 15 der) = 30 pt
+    margen_total = 30 
+    ancho_real_texto = ancho_col_derecha - margen_total
+
     texto_derecha = Table(
         [[nombre], [categoria_prod], [activos], [desc], [modo], [precio]],
-        colWidths=[ancho_col_derecha - 0.5*cm]
+        colWidths=[ancho_real_texto] # Usamos el ancho exacto
     )
     texto_derecha.setStyle(TableStyle([
         ("ALIGN", (0,0), (-1,-1), "LEFT"), 
@@ -251,9 +253,10 @@ def celda_producto(row, ancho_celda, alto_celda):
         ("VALIGN", (0,0), (0,0), "MIDDLE"), 
         ("ALIGN", (1,0), (1,0), "LEFT"),   
         ("VALIGN", (1,0), (1,0), "MIDDLE"), 
-        ("LEFTPADDING", (0,0), (0,0), 10), # Reducido un poco por el nuevo ancho
+        ("LEFTPADDING", (0,0), (0,0), 10), 
         ("RIGHTPADDING", (0,0), (0,0), 0),
-        ("LEFTPADDING", (1,0), (1,0), 15), # Aumentado para separar del bloque izq
+        # Los márgenes que usamos para el cálculo
+        ("LEFTPADDING", (1,0), (1,0), 15), 
         ("RIGHTPADDING", (1,0), (1,0), 15), 
         ("TOPPADDING", (0,0), (-1,-1), 10), 
         ("BOTTOMPADDING", (0,0), (-1,-1), 10),
