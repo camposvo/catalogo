@@ -33,6 +33,7 @@ COLOR_TEXTO      = colors.HexColor("#222222")
 COLOR_PRECIO     = colors.HexColor("#C00000")
 COLOR_DORADO     = colors.HexColor("#C5A059") 
 COLOR_CELESTE    = colors.HexColor("#00AEEF") 
+COLOR_GRIS_TABLA = colors.HexColor("#666666")
 
 EMPRESA   = "Distribuidora Bellingieri"
 SUBTITULO = "Catálogo de Productos"
@@ -67,10 +68,6 @@ style_modo = ParagraphStyle(
     fontName="Helvetica", fontSize=7.5, leading=9.5, 
     textColor=colors.HexColor("#444444"), spaceAfter=4,
 )
-style_precio = ParagraphStyle(
-    "precio", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=11, leading=13, textColor=COLOR_PRECIO,
-)
 
 style_marca_titulo = ParagraphStyle(
     "marca_titulo", parent=styles["Heading1"],
@@ -78,16 +75,21 @@ style_marca_titulo = ParagraphStyle(
     textColor=COLOR_PRIMARIO, alignment=TA_LEFT, spaceBefore=150,
 )
 
-# Estilos para la cajita de presentación
-style_pres_negro = ParagraphStyle(
-    "pres_negro", parent=styles["Normal"],
-    fontName="Helvetica", fontSize=5, leading=6, textColor=colors.black,
-    alignment=TA_RIGHT
+# --- ESTILOS DE LA TABLA DE PRECIOS ---
+style_tabla_titulo_dorado = ParagraphStyle(
+    "tabla_titulo_dorado", parent=styles["Normal"],
+    fontName="Helvetica-Bold", fontSize=6.5, leading=8, textColor=colors.white,
+    alignment=TA_CENTER
 )
-style_pres_valor = ParagraphStyle(
-    "pres_valor", parent=styles["Normal"],
-    fontName="Helvetica", fontSize=8.5, leading=10, textColor=colors.black,
+style_tabla_nombre = ParagraphStyle(
+    "tabla_nombre", parent=styles["Normal"],
+    fontName="Helvetica-Bold", fontSize=6, leading=7.5, textColor=colors.black,
     alignment=TA_LEFT
+)
+style_tabla_precio = ParagraphStyle(
+    "tabla_precio", parent=styles["Normal"],
+    fontName="Helvetica-Bold", fontSize=7, leading=8.5, textColor=COLOR_PRECIO,
+    alignment=TA_RIGHT
 )
 
 # ============================================================
@@ -104,7 +106,11 @@ def cargar_datos(path):
         
     df = df.fillna("")
     
-    for col in ["Nombre imagen", "Modo de uso", "Activos principales", "Marca", "Categoría", "Presentacion"]:
+    columnas_a_limpiar = [
+        "Nombre imagen", "Modo de uso", "Activos principales", "Marca", "Categoría",
+        "Presentacion 1", "Precio 1", "Presentacion 2", "Precio 2", "Presentacion 3", "Precio 3"
+    ]
+    for col in columnas_a_limpiar:
         if col in df.columns:
             df[col] = df[col].astype(str).str.strip()
             
@@ -155,61 +161,96 @@ def celda_producto(row, ancho_celda, alto_celda):
     nombre_imagen = str(row.get("Nombre imagen", "")).strip()
     img_path = os.path.join(IMAGENES_DIR, nombre_imagen) if nombre_imagen and nombre_imagen.lower() != "nan" else ""
     
-    # 33% Izquierda (Imagen+Pres) y 67% Derecha (Textos)
     ancho_bloque_izq = ancho_celda * 0.33
     ancho_col_derecha = ancho_celda * 0.67
     
-    # Dentro del bloque izquierdo: 70% Imagen y 30% Presentación
-    ancho_img_area = ancho_bloque_izq * 0.70
-    ancho_pres_area = ancho_bloque_izq * 0.30
+    ancho_img_area = ancho_bloque_izq * 0.63
+    ancho_tabla_area = ancho_bloque_izq * 0.37
     
-    img = obtener_imagen_ajustada(img_path, ancho_img_area - 0.2*cm, alto_celda - 0.6*cm)
+    img = obtener_imagen_ajustada(img_path, ancho_img_area - 0.1*cm, alto_celda - 0.6*cm)
 
-    # --- CAJITA DE PRESENTACIÓN ---
-    presentacion = str(row.get("Presentacion", "")).strip()
-    
-    if presentacion and presentacion.lower() != "nan":
-        p_negro = Paragraph("CONT.<br/>NETO", style_pres_negro)
-        p_valor = Paragraph(presentacion, style_pres_valor)
+    # --- CONSTRUCCIÓN DE LA TABLA DE PRESENTACIONES ---
+    filas_cuerpo = []
+    for i in range(1, 4):
+        col_pres = f"Presentacion {i}"
+        col_prec = f"Precio {i}"
         
-        tabla_pres = Table([[p_negro, p_valor]], colWidths=[0.7*cm, 0.9*cm])
-        tabla_pres.setStyle(TableStyle([
-            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-            ("ALIGN", (0,0), (0,0), "RIGHT"),
-            ("ALIGN", (1,0), (1,0), "LEFT"),
-            ("LINEAFTER", (0,0), (0,0), 1.2, COLOR_CELESTE), 
+        pres_txt = str(row.get(col_pres, "")).strip()
+        prec_txt = str(row.get(col_prec, "")).strip()
+        
+        if pres_txt and pres_txt.lower() != "nan":
+            try:
+                prec_str = f"${float(prec_txt):,.2f}"
+            except ValueError:
+                prec_str = prec_txt
+                
+            filas_cuerpo.append([
+                Paragraph(pres_txt, style_tabla_nombre),
+                Paragraph(prec_str, style_tabla_precio)
+            ])
+            
+    if len(filas_cuerpo) > 0:
+        ancho_col_izq = ancho_tabla_area * 0.53
+        ancho_col_der = ancho_tabla_area * 0.47
+
+        # 1. EL ADORNO DORADO (Con padding equilibrado)
+        tabla_adorno = Table([["", Paragraph("PRECIO", style_tabla_titulo_dorado)]], colWidths=[ancho_col_izq, ancho_col_der])
+        tabla_adorno.setStyle(TableStyle([
+            ("BACKGROUND", (1,0), (1,0), COLOR_DORADO),
+            ("BOX", (1,0), (1,0), 1, COLOR_DORADO),
+            ("ROUNDEDCORNERS", [5, 5, 0, 0]),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"), # Centrado vertical para el texto
+            # Padding aumentado de 2 a 4 para darle altura a la cajita y centrar
+            ("TOPPADDING", (1,0), (1,0), 4),
+            ("BOTTOMPADDING", (1,0), (1,0), 4),
             ("LEFTPADDING", (0,0), (-1,-1), 0),
-            ("RIGHTPADDING", (0,0), (0,0), 2), 
-            ("LEFTPADDING", (1,0), (1,0), 2),
-            ("RIGHTPADDING", (1,0), (1,0), 0),
+            ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ]))
+
+        # 2. LA TABLA DE DATOS (Con padding vertical medio)
+        tabla_cuerpo = Table(filas_cuerpo, colWidths=[ancho_col_izq, ancho_col_der])
+        tabla_cuerpo.setStyle(TableStyle([
+            ("ALIGN", (0,0), (0,-1), "LEFT"),
+            ("ALIGN", (1,0), (1,-1), "RIGHT"),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("LEFTPADDING", (0,0), (-1,-1), 2),
+            ("RIGHTPADDING", (0,0), (-1,-1), 2),
+            # Padding aumentado de 1.5 a 3 para darle más aire a la fila
+            ("TOPPADDING", (0,0), (-1,-1), 3),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+            
+            ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#CCCCCC")),
+            ("LINEBELOW", (0,0), (-1,-2), 0.5, colors.HexColor("#CCCCCC")),
+            ("LINEAFTER", (0,0), (0,-1), 0.5, colors.HexColor("#CCCCCC")),
+            ("ROUNDEDCORNERS", [0, 0, 5, 5]),
+        ]))
+
+        # 3. UNIMOS EL ADORNO Y LA TABLA
+        tabla_pres = Table([[tabla_adorno], [tabla_cuerpo]], colWidths=[ancho_tabla_area])
+        tabla_pres.setStyle(TableStyle([
+            ("LEFTPADDING", (0,0), (-1,-1), 0),
+            ("RIGHTPADDING", (0,0), (-1,-1), 0),
             ("TOPPADDING", (0,0), (-1,-1), 0),
             ("BOTTOMPADDING", (0,0), (-1,-1), 0),
         ]))
         
-        contenido_col_pres = Table([[""], [tabla_pres]], colWidths=[ancho_pres_area])
-        contenido_col_pres.setStyle(TableStyle([
-            ("ALIGN", (0,1), (0,1), "RIGHT"), 
-            ("VALIGN", (0,1), (0,1), "BOTTOM"),
+        col_izquierda = Table(
+            [[img, tabla_pres]], 
+            colWidths=[ancho_img_area, ancho_tabla_area],
+            rowHeights=[alto_celda - 0.4*cm]
+        )
+        col_izquierda.setStyle(TableStyle([
+            ("ALIGN", (0,0), (0,0), "CENTER"), 
+            ("VALIGN", (0,0), (0,0), "MIDDLE"), 
+            ("ALIGN", (1,0), (1,0), "CENTER"), 
+            ("VALIGN", (1,0), (1,0), "BOTTOM"), 
             ("LEFTPADDING", (0,0), (-1,-1), 0),
             ("RIGHTPADDING", (0,0), (-1,-1), 0),
+            ("TOPPADDING", (0,0), (-1,-1), 0),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 10), 
         ]))
     else:
-        contenido_col_pres = ""
-
-    col_izquierda = Table(
-        [[img, contenido_col_pres]], 
-        colWidths=[ancho_img_area, ancho_pres_area],
-        rowHeights=[alto_celda - 0.4*cm]
-    )
-    col_izquierda.setStyle(TableStyle([
-        ("ALIGN", (0,0), (0,0), "CENTER"), 
-        ("VALIGN", (0,0), (0,0), "MIDDLE"), 
-        ("VALIGN", (1,0), (1,0), "BOTTOM"), 
-        ("LEFTPADDING", (0,0), (-1,-1), 0),
-        ("RIGHTPADDING", (0,0), (-1,-1), 0),
-        ("TOPPADDING", (0,0), (-1,-1), 0),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 5), 
-    ]))
+        col_izquierda = img
 
     # --- TEXTOS DE LA DERECHA ---
     nombre = Paragraph(str(row.get("Nombre del producto", "")), style_nombre)
@@ -221,18 +262,12 @@ def celda_producto(row, ancho_celda, alto_celda):
     modo_txt = str(row.get("Modo de uso", "")).strip()
     modo = Paragraph(f"<b>MODO DE USO:</b> {modo_txt}" if modo_txt and modo_txt.lower() != "nan" else "", style_modo)
 
-    precio_txt = str(row.get("Precio", "")).strip()
-    precio_str = f"${float(precio_txt):,.2f}" if precio_txt else "Consultar precio"
-    precio = Paragraph(precio_str, style_precio)
-
-    # CÁLCULO EXACTO DEL ANCHO DEL TEXTO:
-    # Ancho total de la columna derecha MENOS los márgenes (15 izq + 15 der) = 30 pt
     margen_total = 30 
     ancho_real_texto = ancho_col_derecha - margen_total
 
     texto_derecha = Table(
-        [[nombre], [categoria_prod], [activos], [desc], [modo], [precio]],
-        colWidths=[ancho_real_texto] # Usamos el ancho exacto
+        [[nombre], [categoria_prod], [activos], [desc], [modo]],
+        colWidths=[ancho_real_texto]
     )
     texto_derecha.setStyle(TableStyle([
         ("ALIGN", (0,0), (-1,-1), "LEFT"), 
@@ -255,7 +290,6 @@ def celda_producto(row, ancho_celda, alto_celda):
         ("VALIGN", (1,0), (1,0), "MIDDLE"), 
         ("LEFTPADDING", (0,0), (0,0), 10), 
         ("RIGHTPADDING", (0,0), (0,0), 0),
-        # Los márgenes que usamos para el cálculo
         ("LEFTPADDING", (1,0), (1,0), 15), 
         ("RIGHTPADDING", (1,0), (1,0), 15), 
         ("TOPPADDING", (0,0), (-1,-1), 10), 
