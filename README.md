@@ -31,5 +31,6 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 pip install pandas openpyxl reportlab pillow pypdf
+pip install svglib
 
 python generar_catalogo.py

@@ -18,12 +18,16 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from PIL import Image as PILImage
 from pypdf import PdfWriter, PdfReader
 
+# Importamos svglib para leer archivos SVG
+from svglib.svglib import svg2rlg
+
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
 EXCEL_PATH     = "catalogo.xlsx"
 IMAGENES_DIR   = "imagenes"
 LOGO_PATH      = "logo.png"  
+CARRITO_PATH   = "carrito.png"  # <--- Puede ser .svg o .png
 PORTADA_PDF    = "portada.pdf" 
 OUTPUT_PDF     = "Catalogo_Temporal.pdf" 
 OUTPUT_FINAL   = "Catalogo_Distribuidora_Bellingieri_Final.pdf" 
@@ -75,10 +79,10 @@ style_marca_titulo = ParagraphStyle(
     textColor=COLOR_PRIMARIO, alignment=TA_LEFT, spaceBefore=150,
 )
 
-# --- ESTILOS DE LA TABLA DE PRECIOS ---
-style_tabla_titulo_dorado = ParagraphStyle(
-    "tabla_titulo_dorado", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=6.5, leading=8, textColor=colors.white,
+# Estilos para la tabla de precios
+style_tabla_icono = ParagraphStyle(
+    "tabla_icono", parent=styles["Normal"],
+    fontName="Helvetica-Bold", fontSize=11, leading=13, textColor=colors.white,
     alignment=TA_CENTER
 )
 style_tabla_nombre = ParagraphStyle(
@@ -190,34 +194,54 @@ def celda_producto(row, ancho_celda, alto_celda):
             ])
             
     if len(filas_cuerpo) > 0:
-        ancho_col_izq = ancho_tabla_area * 0.53
-        ancho_col_der = ancho_tabla_area * 0.47
+        ancho_col_izq = ancho_tabla_area * 0.48
+        ancho_col_der = ancho_tabla_area * 0.52
 
-        # 1. EL ADORNO DORADO (Con padding equilibrado)
-        tabla_adorno = Table([["", Paragraph("PRECIO", style_tabla_titulo_dorado)]], colWidths=[ancho_col_izq, ancho_col_der])
+        # 1. EL ADORNO DORADO CON SOPORTE PARA SVG Y PNG
+        if os.path.isfile(CARRITO_PATH):
+            try:
+                if CARRITO_PATH.lower().endswith('.svg'):
+                    # Cargar SVG
+                    icono = svg2rlg(CARRITO_PATH)
+                    if icono:
+                        # Escalar el SVG para que mida 14 puntos
+                        escala = 14 / max(icono.width, icono.height)
+                        icono.scale(escala, escala)
+                        icono.hAlign = "CENTER"
+                    else:
+                        icono = Paragraph("PRECIO", style_tabla_icono)
+                else:
+                    # Cargar PNG
+                    icono = Image(CARRITO_PATH, width=13, height=13)
+                    icono.hAlign = "CENTER"
+            except Exception:
+                icono = Paragraph("PRECIO", style_tabla_icono)
+        else:
+            icono = Paragraph("PRECIO", style_tabla_icono)
+
+        tabla_adorno = Table([["", icono]], colWidths=[ancho_col_izq, ancho_col_der], rowHeights=[0.6*cm])
         tabla_adorno.setStyle(TableStyle([
             ("BACKGROUND", (1,0), (1,0), COLOR_DORADO),
             ("BOX", (1,0), (1,0), 1, COLOR_DORADO),
             ("ROUNDEDCORNERS", [5, 5, 0, 0]),
-            ("VALIGN", (0,0), (-1,-1), "MIDDLE"), # Centrado vertical para el texto
-            # Padding aumentado de 2 a 4 para darle altura a la cajita y centrar
-            ("TOPPADDING", (1,0), (1,0), 4),
-            ("BOTTOMPADDING", (1,0), (1,0), 4),
+            ("ALIGN", (1,0), (1,0), "CENTER"),
+            ("VALIGN", (1,0), (1,0), "MIDDLE"), 
+            ("TOPPADDING", (1,0), (1,0), 0),
+            ("BOTTOMPADDING", (1,0), (1,0), 0),
             ("LEFTPADDING", (0,0), (-1,-1), 0),
             ("RIGHTPADDING", (0,0), (-1,-1), 0),
         ]))
 
-        # 2. LA TABLA DE DATOS (Con padding vertical medio)
-        tabla_cuerpo = Table(filas_cuerpo, colWidths=[ancho_col_izq, ancho_col_der])
+        # 2. LA TABLA DE DATOS
+        tabla_cuerpo = Table(filas_cuerpo, colWidths=[ancho_col_izq, ancho_col_der], rowHeights=[0.6*cm] * len(filas_cuerpo))
         tabla_cuerpo.setStyle(TableStyle([
             ("ALIGN", (0,0), (0,-1), "LEFT"),
             ("ALIGN", (1,0), (1,-1), "RIGHT"),
             ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
             ("LEFTPADDING", (0,0), (-1,-1), 2),
-            ("RIGHTPADDING", (0,0), (-1,-1), 2),
-            # Padding aumentado de 1.5 a 3 para darle más aire a la fila
-            ("TOPPADDING", (0,0), (-1,-1), 3),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+            ("RIGHTPADDING", (0,0), (-1,-1), 1), 
+            ("TOPPADDING", (0,0), (-1,-1), 0),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 0),
             
             ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#CCCCCC")),
             ("LINEBELOW", (0,0), (-1,-2), 0.5, colors.HexColor("#CCCCCC")),
