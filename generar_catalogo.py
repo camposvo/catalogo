@@ -18,16 +18,13 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from PIL import Image as PILImage
 from pypdf import PdfWriter, PdfReader
 
-# Importamos svglib para leer archivos SVG
-from svglib.svglib import svg2rlg
-
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
 EXCEL_PATH     = "catalogo.xlsx"
 IMAGENES_DIR   = "imagenes"
 LOGO_PATH      = "logo.png"  
-CARRITO_PATH   = "carrito.png"  # <--- Puede ser .svg o .png
+CARRITO_PATH   = "carrito.png"  # <--- Asegúrate de que sea .png
 PORTADA_PDF    = "portada.pdf" 
 OUTPUT_PDF     = "Catalogo_Temporal.pdf" 
 OUTPUT_FINAL   = "Catalogo_Distribuidora_Bellingieri_Final.pdf" 
@@ -76,7 +73,7 @@ style_modo = ParagraphStyle(
 style_marca_titulo = ParagraphStyle(
     "marca_titulo", parent=styles["Heading1"],
     fontName="Helvetica-Bold", fontSize=36, leading=42,
-    textColor=COLOR_PRIMARIO, alignment=TA_LEFT, spaceBefore=150,
+    textColor=COLOR_PRIMARIO, alignment=TA_LEFT,
 )
 
 # Estilos para la tabla de precios
@@ -97,6 +94,16 @@ style_tabla_precio = ParagraphStyle(
 )
 
 # ============================================================
+# FUNCIÓN PARA LIMPIAR TEXTO (Evita el error de etiquetas <br>)
+# ============================================================
+def limpiar_texto(texto):
+    if not texto:
+        return ""
+    texto = str(texto)
+    texto = texto.replace("<br>", " ").replace("<br/>", " ").replace("<BR>", " ").replace("<BR/>", " ")
+    return texto.strip()
+
+# ============================================================
 # CARGA DE DATOS
 # ============================================================
 def cargar_datos(path):
@@ -111,12 +118,12 @@ def cargar_datos(path):
     df = df.fillna("")
     
     columnas_a_limpiar = [
-        "Nombre imagen", "Modo de uso", "Activos principales", "Marca", "Categoría",
+        "Nombre imagen", "Modo de uso", "Activos principales", "Marca", "Categoría", "Descripción", "Nombre del producto",
         "Presentacion 1", "Precio 1", "Presentacion 2", "Precio 2", "Presentacion 3", "Precio 3"
     ]
     for col in columnas_a_limpiar:
         if col in df.columns:
-            df[col] = df[col].astype(str).str.strip()
+            df[col] = df[col].apply(limpiar_texto)
             
     df["_orden"] = range(len(df))
     return df
@@ -126,7 +133,7 @@ def agrupar_por_marca(df):
     vistos = []
     for marca in df["Marca"]:
         marca_limpia = str(marca).strip()
-        if marca_limpia and marca_limpia not in vistos:
+        if marca_limpia and marca_limpia.lower() != "nan" and marca_limpia not in vistos:
             vistos.append(marca_limpia)
             
     for marca in vistos:
@@ -173,7 +180,6 @@ def celda_producto(row, ancho_celda, alto_celda):
     
     img = obtener_imagen_ajustada(img_path, ancho_img_area - 0.1*cm, alto_celda - 0.6*cm)
 
-    # --- CONSTRUCCIÓN DE LA TABLA DE PRESENTACIONES ---
     filas_cuerpo = []
     for i in range(1, 4):
         col_pres = f"Presentacion {i}"
@@ -183,10 +189,13 @@ def celda_producto(row, ancho_celda, alto_celda):
         prec_txt = str(row.get(col_prec, "")).strip()
         
         if pres_txt and pres_txt.lower() != "nan":
-            try:
-                prec_str = f"${float(prec_txt):,.2f}"
-            except ValueError:
-                prec_str = prec_txt
+            if prec_txt and prec_txt.lower() != "nan":
+                try:
+                    prec_str = f"${float(prec_txt):,.2f}"
+                except ValueError:
+                    prec_str = prec_txt
+            else:
+                prec_str = "Consultar"
                 
             filas_cuerpo.append([
                 Paragraph(pres_txt, style_tabla_nombre),
@@ -197,23 +206,10 @@ def celda_producto(row, ancho_celda, alto_celda):
         ancho_col_izq = ancho_tabla_area * 0.48
         ancho_col_der = ancho_tabla_area * 0.52
 
-        # 1. EL ADORNO DORADO CON SOPORTE PARA SVG Y PNG
         if os.path.isfile(CARRITO_PATH):
             try:
-                if CARRITO_PATH.lower().endswith('.svg'):
-                    # Cargar SVG
-                    icono = svg2rlg(CARRITO_PATH)
-                    if icono:
-                        # Escalar el SVG para que mida 14 puntos
-                        escala = 14 / max(icono.width, icono.height)
-                        icono.scale(escala, escala)
-                        icono.hAlign = "CENTER"
-                    else:
-                        icono = Paragraph("PRECIO", style_tabla_icono)
-                else:
-                    # Cargar PNG
-                    icono = Image(CARRITO_PATH, width=13, height=13)
-                    icono.hAlign = "CENTER"
+                icono = Image(CARRITO_PATH, width=12, height=12)
+                icono.hAlign = "CENTER"
             except Exception:
                 icono = Paragraph("PRECIO", style_tabla_icono)
         else:
@@ -232,7 +228,6 @@ def celda_producto(row, ancho_celda, alto_celda):
             ("RIGHTPADDING", (0,0), (-1,-1), 0),
         ]))
 
-        # 2. LA TABLA DE DATOS
         tabla_cuerpo = Table(filas_cuerpo, colWidths=[ancho_col_izq, ancho_col_der], rowHeights=[0.6*cm] * len(filas_cuerpo))
         tabla_cuerpo.setStyle(TableStyle([
             ("ALIGN", (0,0), (0,-1), "LEFT"),
@@ -249,7 +244,6 @@ def celda_producto(row, ancho_celda, alto_celda):
             ("ROUNDEDCORNERS", [0, 0, 5, 5]),
         ]))
 
-        # 3. UNIMOS EL ADORNO Y LA TABLA
         tabla_pres = Table([[tabla_adorno], [tabla_cuerpo]], colWidths=[ancho_tabla_area])
         tabla_pres.setStyle(TableStyle([
             ("LEFTPADDING", (0,0), (-1,-1), 0),
@@ -276,13 +270,20 @@ def celda_producto(row, ancho_celda, alto_celda):
     else:
         col_izquierda = img
 
-    # --- TEXTOS DE LA DERECHA ---
     nombre = Paragraph(str(row.get("Nombre del producto", "")), style_nombre)
+    
     categoria_txt = str(row.get("Categoría", "")).strip()
-    categoria_prod = Paragraph(categoria_txt.upper() if categoria_txt and categoria_txt.lower() != "nan" else "", style_categoria_producto)
+    if categoria_txt and categoria_txt.lower() != "nan":
+        categoria_prod = Paragraph(categoria_txt.upper(), style_categoria_producto)
+    else:
+        categoria_prod = ""
+        
     activos_txt = str(row.get("Activos principales", "")).strip()
     activos = Paragraph(f"<b>ACTIVOS:</b> {activos_txt}" if activos_txt and activos_txt.lower() != "nan" else "", style_activos)
-    desc = Paragraph(str(row.get("Descripción", "")), style_desc)
+    
+    desc_txt = str(row.get("Descripción", "")).strip()
+    desc = Paragraph(desc_txt if desc_txt and desc_txt.lower() != "nan" else "", style_desc)
+    
     modo_txt = str(row.get("Modo de uso", "")).strip()
     modo = Paragraph(f"<b>MODO DE USO:</b> {modo_txt}" if modo_txt and modo_txt.lower() != "nan" else "", style_modo)
 
@@ -412,10 +413,17 @@ def generar_y_fusionar():
     story = []
     total_grupos = len(grupos)
     
+    # Iniciamos con la plantilla limpia
     story.append(NextPageTemplate("limpia"))
 
     for idx, (marca, prods) in enumerate(grupos, start=1):
-        categoria_ejemplo = str(prods[0].get("Categoría", "")).strip()
+        categoria_ejemplo = ""
+        for p in prods:
+            cat = str(p.get("Categoría", "")).strip()
+            if cat and cat.lower() != "nan":
+                categoria_ejemplo = cat
+                break
+                
         nombre_plantilla_prods = f"prods_{idx}"
         
         def crear_header_con_datos(m, c):
@@ -429,23 +437,30 @@ def generar_y_fusionar():
             PageTemplate(id=nombre_plantilla_prods, frames=[frame], onPage=crear_header_con_datos(marca, categoria_ejemplo))
         ])
         
-        # Separador
+        # --- PÁGINA SEPARADORA (Sin header) ---
+        story.append(Spacer(1, 5*cm))
         story.append(Paragraph(marca.upper(), style_marca_titulo))
+        story.append(Spacer(1, 0.5*cm))
+        
+        # Línea decorativa
+        story.append(Table(
+            [[""]], colWidths=[6*cm], rowHeights=[0.15*cm],
+            style=TableStyle([("BACKGROUND", (0,0), (-1,-1), COLOR_DORADO)]),
+        ))
+        
+        # --- PÁGINAS DE PRODUCTOS (Con header) ---
         story.append(NextPageTemplate(nombre_plantilla_prods))
         story.append(PageBreak())
 
-        # Productos
         for i in range(0, len(prods), 4):
             grid = pagina_productos(prods[i:i+4])
             story.append(grid)
             if i + 4 < len(prods):
                 story.append(PageBreak())
             
-        # Siguiente Separador
+        # Volvemos a la plantilla limpia para el siguiente separador
         story.append(NextPageTemplate("limpia"))
-        if idx < total_grupos:
-            story.append(PageBreak())
-
+        
     doc.build(story)
     print(f"📄 Cuerpo del catálogo generado temporalmente: {OUTPUT_PDF}")
 
