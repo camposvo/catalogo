@@ -24,7 +24,7 @@ from pypdf import PdfWriter, PdfReader
 EXCEL_PATH     = "catalogo.xlsx"
 IMAGENES_DIR   = "imagenes"
 LOGO_PATH      = "logo.png"  
-CARRITO_PATH   = "carrito.png"  # <--- Asegúrate de que sea .png
+CARRITO_PATH   = "carrito.png"  # (Ya no se usa, pero lo dejamos por si acaso)
 PORTADA_PDF    = "portada.pdf" 
 OUTPUT_PDF     = "Catalogo_Temporal.pdf" 
 OUTPUT_FINAL   = "Catalogo_Distribuidora_Bellingieri_Final.pdf" 
@@ -76,25 +76,20 @@ style_marca_titulo = ParagraphStyle(
     textColor=COLOR_PRIMARIO, alignment=TA_LEFT,
 )
 
-# Estilos para la tabla de precios
-style_tabla_icono = ParagraphStyle(
-    "tabla_icono", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=11, leading=13, textColor=colors.white,
-    alignment=TA_CENTER
-)
+# --- ESTILOS CENTRADOS PARA LA TABLA ---
 style_tabla_nombre = ParagraphStyle(
     "tabla_nombre", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=6, leading=7.5, textColor=colors.black,
-    alignment=TA_LEFT
+    fontName="Helvetica-Bold", fontSize=7, leading=8.5, textColor=colors.black,
+    alignment=TA_CENTER  # <-- CENTRADO
 )
 style_tabla_precio = ParagraphStyle(
     "tabla_precio", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=7, leading=8.5, textColor=COLOR_PRECIO,
-    alignment=TA_RIGHT
+    fontName="Helvetica-Bold", fontSize=7.5, leading=9, textColor=COLOR_PRECIO,
+    alignment=TA_CENTER  # <-- CENTRADO
 )
 
 # ============================================================
-# FUNCIÓN PARA LIMPIAR TEXTO (Evita el error de etiquetas <br>)
+# FUNCIÓN PARA LIMPIAR TEXTO
 # ============================================================
 def limpiar_texto(texto):
     if not texto:
@@ -180,6 +175,7 @@ def celda_producto(row, ancho_celda, alto_celda):
     
     img = obtener_imagen_ajustada(img_path, ancho_img_area - 0.1*cm, alto_celda - 0.6*cm)
 
+    # --- CONSTRUCCIÓN DE LA TABLA DE PRESENTACIONES ---
     filas_cuerpo = []
     for i in range(1, 4):
         col_pres = f"Presentacion {i}"
@@ -206,50 +202,20 @@ def celda_producto(row, ancho_celda, alto_celda):
         ancho_col_izq = ancho_tabla_area * 0.48
         ancho_col_der = ancho_tabla_area * 0.52
 
-        if os.path.isfile(CARRITO_PATH):
-            try:
-                icono = Image(CARRITO_PATH, width=12, height=12)
-                icono.hAlign = "CENTER"
-            except Exception:
-                icono = Paragraph("PRECIO", style_tabla_icono)
-        else:
-            icono = Paragraph("PRECIO", style_tabla_icono)
-
-        tabla_adorno = Table([["", icono]], colWidths=[ancho_col_izq, ancho_col_der], rowHeights=[0.6*cm])
-        tabla_adorno.setStyle(TableStyle([
-            ("BACKGROUND", (1,0), (1,0), COLOR_DORADO),
-            ("BOX", (1,0), (1,0), 1, COLOR_DORADO),
-            ("ROUNDEDCORNERS", [5, 5, 0, 0]),
-            ("ALIGN", (1,0), (1,0), "CENTER"),
-            ("VALIGN", (1,0), (1,0), "MIDDLE"), 
-            ("TOPPADDING", (1,0), (1,0), 0),
-            ("BOTTOMPADDING", (1,0), (1,0), 0),
-            ("LEFTPADDING", (0,0), (-1,-1), 0),
-            ("RIGHTPADDING", (0,0), (-1,-1), 0),
-        ]))
-
-        tabla_cuerpo = Table(filas_cuerpo, colWidths=[ancho_col_izq, ancho_col_der], rowHeights=[0.6*cm] * len(filas_cuerpo))
-        tabla_cuerpo.setStyle(TableStyle([
-            ("ALIGN", (0,0), (0,-1), "LEFT"),
-            ("ALIGN", (1,0), (1,-1), "RIGHT"),
+        tabla_pres = Table(filas_cuerpo, colWidths=[ancho_col_izq, ancho_col_der], rowHeights=[0.6*cm] * len(filas_cuerpo))
+        tabla_pres.setStyle(TableStyle([
+            ("ALIGN", (0,0), (-1,-1), "CENTER"), # <-- CENTRADO EN TODA LA TABLA
             ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
             ("LEFTPADDING", (0,0), (-1,-1), 2),
-            ("RIGHTPADDING", (0,0), (-1,-1), 1), 
+            ("RIGHTPADDING", (0,0), (-1,-1), 2),
             ("TOPPADDING", (0,0), (-1,-1), 0),
             ("BOTTOMPADDING", (0,0), (-1,-1), 0),
             
             ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#CCCCCC")),
+            ("ROUNDEDCORNERS", [5, 5, 5, 5]),
+            
             ("LINEBELOW", (0,0), (-1,-2), 0.5, colors.HexColor("#CCCCCC")),
             ("LINEAFTER", (0,0), (0,-1), 0.5, colors.HexColor("#CCCCCC")),
-            ("ROUNDEDCORNERS", [0, 0, 5, 5]),
-        ]))
-
-        tabla_pres = Table([[tabla_adorno], [tabla_cuerpo]], colWidths=[ancho_tabla_area])
-        tabla_pres.setStyle(TableStyle([
-            ("LEFTPADDING", (0,0), (-1,-1), 0),
-            ("RIGHTPADDING", (0,0), (-1,-1), 0),
-            ("TOPPADDING", (0,0), (-1,-1), 0),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 0),
         ]))
         
         col_izquierda = Table(
@@ -270,6 +236,7 @@ def celda_producto(row, ancho_celda, alto_celda):
     else:
         col_izquierda = img
 
+    # --- TEXTOS DE LA DERECHA ---
     nombre = Paragraph(str(row.get("Nombre del producto", "")), style_nombre)
     
     categoria_txt = str(row.get("Categoría", "")).strip()
@@ -413,7 +380,6 @@ def generar_y_fusionar():
     story = []
     total_grupos = len(grupos)
     
-    # Iniciamos con la plantilla limpia
     story.append(NextPageTemplate("limpia"))
 
     for idx, (marca, prods) in enumerate(grupos, start=1):
