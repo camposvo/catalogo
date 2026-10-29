@@ -51,13 +51,8 @@ style_nombre = ParagraphStyle(
 )
 style_categoria_producto = ParagraphStyle(
     "categoria_producto", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=8.5, leading=10, 
+    fontName="Helvetica-Bold", fontSize=7.5, leading=9, 
     textColor=COLOR_DORADO, spaceAfter=3,
-)
-style_activos = ParagraphStyle(
-    "activos", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=8, leading=10, 
-    textColor=COLOR_PRIMARIO, spaceAfter=3,
 )
 style_desc = ParagraphStyle(
     "desc", parent=styles["Normal"],
@@ -80,12 +75,12 @@ style_marca_titulo = ParagraphStyle(
 style_tabla_nombre = ParagraphStyle(
     "tabla_nombre", parent=styles["Normal"],
     fontName="Helvetica-Bold", fontSize=7, leading=8.5, textColor=colors.black,
-    alignment=TA_CENTER  # <-- CENTRADO
+    alignment=TA_CENTER
 )
 style_tabla_precio = ParagraphStyle(
     "tabla_precio", parent=styles["Normal"],
     fontName="Helvetica-Bold", fontSize=7.5, leading=9, textColor=COLOR_PRECIO,
-    alignment=TA_CENTER  # <-- CENTRADO
+    alignment=TA_CENTER
 )
 
 # ============================================================
@@ -99,7 +94,7 @@ def limpiar_texto(texto):
     return texto.strip()
 
 # ============================================================
-# CARGA DE DATOS
+# CARGA DE DATOS (FILTRO POR COLUMNA ESTATUS)
 # ============================================================
 def cargar_datos(path):
     if not os.path.exists(path):
@@ -111,6 +106,15 @@ def cargar_datos(path):
         raise ValueError("El Excel debe contener una columna llamada 'Marca'.")
         
     df = df.fillna("")
+    
+    # --- LÓGICA DE FILTRADO POR ESTATUS ---
+    if "Estatus" in df.columns:
+        # Convertimos a texto, limpiamos espacios y pasamos a mayúsculas
+        df["Estatus"] = df["Estatus"].astype(str).str.strip().str.upper()
+        # Filtramos: Nos quedamos solo con los que digan "Y"
+        df = df[df["Estatus"] == "Y"]
+    else:
+        print("⚠️ No se encontró la columna 'Estatus'. Se mostrarán todos los productos.")
     
     columnas_a_limpiar = [
         "Nombre imagen", "Modo de uso", "Activos principales", "Marca", "Categoría", "Descripción", "Nombre del producto",
@@ -133,7 +137,9 @@ def agrupar_por_marca(df):
             
     for marca in vistos:
         subset = df[df["Marca"].astype(str).str.strip() == marca].sort_values("_orden")
-        grupos.append((marca, subset.to_dict("records")))
+        # Validamos que la marca tenga al menos un producto (por si todos tenían "N")
+        if not subset.empty:
+            grupos.append((marca, subset.to_dict("records")))
     return grupos
 
 # ============================================================
@@ -162,7 +168,6 @@ def obtener_imagen_ajustada(img_path, max_w, max_h):
         except Exception:
             return _placeholder(max_w, max_h)
     return _placeholder(max_w, max_h)
-
 def celda_producto(row, ancho_celda, alto_celda):
     nombre_imagen = str(row.get("Nombre imagen", "")).strip()
     img_path = os.path.join(IMAGENES_DIR, nombre_imagen) if nombre_imagen and nombre_imagen.lower() != "nan" else ""
@@ -204,7 +209,7 @@ def celda_producto(row, ancho_celda, alto_celda):
 
         tabla_pres = Table(filas_cuerpo, colWidths=[ancho_col_izq, ancho_col_der], rowHeights=[0.6*cm] * len(filas_cuerpo))
         tabla_pres.setStyle(TableStyle([
-            ("ALIGN", (0,0), (-1,-1), "CENTER"), # <-- CENTRADO EN TODA LA TABLA
+            ("ALIGN", (0,0), (-1,-1), "CENTER"), 
             ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
             ("LEFTPADDING", (0,0), (-1,-1), 2),
             ("RIGHTPADDING", (0,0), (-1,-1), 2),
@@ -245,20 +250,25 @@ def celda_producto(row, ancho_celda, alto_celda):
     else:
         categoria_prod = ""
         
-    activos_txt = str(row.get("Activos principales", "")).strip()
-    activos = Paragraph(f"<b>ACTIVOS:</b> {activos_txt}" if activos_txt and activos_txt.lower() != "nan" else "", style_activos)
-    
+    # 1. LA DESCRIPCIÓN
     desc_txt = str(row.get("Descripción", "")).strip()
     desc = Paragraph(desc_txt if desc_txt and desc_txt.lower() != "nan" else "", style_desc)
     
+    # 2. LOS ACTIVOS (Con negrita)
+    activos_txt = str(row.get("Activos principales", "")).strip()
+    activos = Paragraph(f"<b>ACTIVOS:</b> {activos_txt}" if activos_txt and activos_txt.lower() != "nan" else "", style_modo)
+    
+    # 3. EL MODO DE USO
     modo_txt = str(row.get("Modo de uso", "")).strip()
     modo = Paragraph(f"<b>MODO DE USO:</b> {modo_txt}" if modo_txt and modo_txt.lower() != "nan" else "", style_modo)
 
     margen_total = 30 
     ancho_real_texto = ancho_col_derecha - margen_total
 
+    # --- AQUÍ ESTÁ EL CAMBIO DE ORDEN ---
+    # Ahora es: nombre, categoria, descripción, activos, modo
     texto_derecha = Table(
-        [[nombre], [categoria_prod], [activos], [desc], [modo]],
+        [[nombre], [categoria_prod], [desc], [activos], [modo]],
         colWidths=[ancho_real_texto]
     )
     texto_derecha.setStyle(TableStyle([
