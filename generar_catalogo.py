@@ -51,7 +51,7 @@ style_nombre = ParagraphStyle(
 )
 style_categoria_producto = ParagraphStyle(
     "categoria_producto", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=7.5, leading=9, 
+    fontName="Helvetica-Bold", fontSize=7, leading=9, 
     textColor=COLOR_DORADO, spaceAfter=3,
 )
 style_desc = ParagraphStyle(
@@ -168,6 +168,7 @@ def obtener_imagen_ajustada(img_path, max_w, max_h):
         except Exception:
             return _placeholder(max_w, max_h)
     return _placeholder(max_w, max_h)
+
 def celda_producto(row, ancho_celda, alto_celda):
     nombre_imagen = str(row.get("Nombre imagen", "")).strip()
     img_path = os.path.join(IMAGENES_DIR, nombre_imagen) if nombre_imagen and nombre_imagen.lower() != "nan" else ""
@@ -254,7 +255,7 @@ def celda_producto(row, ancho_celda, alto_celda):
     desc_txt = str(row.get("Descripción", "")).strip()
     desc = Paragraph(desc_txt if desc_txt and desc_txt.lower() != "nan" else "", style_desc)
     
-    # 2. LOS ACTIVOS (Con negrita)
+    # 2. LOS ACTIVOS
     activos_txt = str(row.get("Activos principales", "")).strip()
     activos = Paragraph(f"<b>ACTIVOS:</b> {activos_txt}" if activos_txt and activos_txt.lower() != "nan" else "", style_modo)
     
@@ -265,8 +266,7 @@ def celda_producto(row, ancho_celda, alto_celda):
     margen_total = 30 
     ancho_real_texto = ancho_col_derecha - margen_total
 
-    # --- AQUÍ ESTÁ EL CAMBIO DE ORDEN ---
-    # Ahora es: nombre, categoria, descripción, activos, modo
+    # El orden es: nombre, categoria, descripción, activos, modo
     texto_derecha = Table(
         [[nombre], [categoria_prod], [desc], [activos], [modo]],
         colWidths=[ancho_real_texto]
@@ -278,6 +278,9 @@ def celda_producto(row, ancho_celda, alto_celda):
         ("RIGHTPADDING", (0,0), (-1,-1), 0),
         ("TOPPADDING", (0,0), (-1,-1), 0), 
         ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+        
+        # AQUI ESTA EL AJUSTE: Aumentamos el padding inferior de la fila 2 (descripción)
+        ("BOTTOMPADDING", (0,2), (-1,2), 8), 
     ]))
 
     contenido = Table(
