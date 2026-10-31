@@ -22,9 +22,9 @@ from pypdf import PdfWriter, PdfReader
 # CONFIGURACIÓN
 # ============================================================
 EXCEL_PATH     = "catalogo.xlsx"
+TIPOS_PATH     = "tipos.xlsx"
 IMAGENES_DIR   = "imagenes"
 LOGO_PATH      = "logo.png"  
-CARRITO_PATH   = "carrito.png"  # (Ya no se usa, pero lo dejamos por si acaso)
 PORTADA_PDF    = "portada.pdf" 
 OUTPUT_PDF     = "Catalogo_Temporal.pdf" 
 OUTPUT_FINAL   = "Catalogo_Distribuidora_Bellingieri_Final.pdf" 
@@ -34,7 +34,6 @@ COLOR_TEXTO      = colors.HexColor("#222222")
 COLOR_PRECIO     = colors.HexColor("#C00000")
 COLOR_DORADO     = colors.HexColor("#C5A059") 
 COLOR_CELESTE    = colors.HexColor("#00AEEF") 
-COLOR_GRIS_TABLA = colors.HexColor("#666666")
 
 EMPRESA   = "Distribuidora Bellingieri"
 SUBTITULO = "Catálogo de Productos"
@@ -46,241 +45,214 @@ styles = getSampleStyleSheet()
 
 style_nombre = ParagraphStyle(
     "nombre", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=11.5, leading=13.5, 
+    fontName="Helvetica-Bold", fontSize=10, leading=12, 
     textColor=COLOR_PRIMARIO, spaceAfter=2,
 )
 style_categoria_producto = ParagraphStyle(
     "categoria_producto", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=7, leading=9, 
+    fontName="Helvetica-Bold", fontSize=7, leading=8.5, 
     textColor=COLOR_DORADO, spaceAfter=3,
 )
 style_desc = ParagraphStyle(
     "desc", parent=styles["Normal"],
-    fontName="Helvetica", fontSize=8.5, leading=11, 
+    fontName="Helvetica", fontSize=7.5, leading=9.5, 
     textColor=COLOR_TEXTO, spaceAfter=4,
 )
 style_modo = ParagraphStyle(
     "modo", parent=styles["Normal"],
-    fontName="Helvetica", fontSize=7.5, leading=9.5, 
+    fontName="Helvetica", fontSize=7, leading=9, 
     textColor=colors.HexColor("#444444"), spaceAfter=4,
 )
-
-style_marca_titulo = ParagraphStyle(
-    "marca_titulo", parent=styles["Heading1"],
+style_tipo_titulo = ParagraphStyle(
+    "tipo_titulo", parent=styles["Heading1"],
     fontName="Helvetica-Bold", fontSize=36, leading=42,
     textColor=COLOR_PRIMARIO, alignment=TA_LEFT,
 )
 
-# --- ESTILOS CENTRADOS PARA LA TABLA ---
+# Estilos para la tabla de precios
 style_tabla_nombre = ParagraphStyle(
     "tabla_nombre", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=7, leading=8.5, textColor=colors.black,
+    fontName="Helvetica-Bold", fontSize=6, leading=7.5, textColor=colors.black,
     alignment=TA_CENTER
 )
 style_tabla_precio = ParagraphStyle(
     "tabla_precio", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=7.5, leading=9, textColor=COLOR_PRECIO,
+    fontName="Helvetica-Bold", fontSize=7, leading=8.5, textColor=COLOR_PRECIO,
     alignment=TA_CENTER
 )
 
 # ============================================================
-# FUNCIÓN PARA LIMPIAR TEXTO
+# FUNCIONES AUXILIARES
 # ============================================================
 def limpiar_texto(texto):
-    if not texto:
-        return ""
-    texto = str(texto)
-    texto = texto.replace("<br>", " ").replace("<br/>", " ").replace("<BR>", " ").replace("<BR/>", " ")
-    return texto.strip()
+    if not texto: return ""
+    return str(texto).replace("<br>", " ").replace("<br/>", " ").replace("<BR>", " ").replace("<BR/>", " ").strip()
+
+def obtener_color_hex(color_str, default_color=COLOR_PRIMARIO):
+    if not color_str or str(color_str).lower() == "nan": return default_color
+    color_str = str(color_str).strip()
+    if color_str.startswith("#"):
+        try: return colors.HexColor(color_str)
+        except: return default_color
+    try: return getattr(colors, color_str.lower())
+    except AttributeError:
+        try:
+            if len(color_str) == 6: return colors.HexColor(f"#{color_str}")
+        except: pass
+    return default_color
 
 # ============================================================
-# CARGA DE DATOS (FILTRO POR COLUMNA ESTATUS)
+# CARGA DE DATOS
 # ============================================================
 def cargar_datos(path):
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"No se encontró el archivo Excel: {path}")
+    if not os.path.exists(path): raise FileNotFoundError(f"No se encontró: {path}")
     df = pd.read_excel(path)
     df.columns = [c.strip() for c in df.columns]
-    
-    if "Marca" not in df.columns:
-        raise ValueError("El Excel debe contener una columna llamada 'Marca'.")
-        
+    if "Tipo" not in df.columns: raise ValueError("Falta columna 'Tipo'.")
     df = df.fillna("")
-    
-    # --- LÓGICA DE FILTRADO POR ESTATUS ---
     if "Estatus" in df.columns:
-        # Convertimos a texto, limpiamos espacios y pasamos a mayúsculas
         df["Estatus"] = df["Estatus"].astype(str).str.strip().str.upper()
-        # Filtramos: Nos quedamos solo con los que digan "Y"
         df = df[df["Estatus"] == "Y"]
-    else:
-        print("⚠️ No se encontró la columna 'Estatus'. Se mostrarán todos los productos.")
-    
-    columnas_a_limpiar = [
-        "Nombre imagen", "Modo de uso", "Activos principales", "Marca", "Categoría", "Descripción", "Nombre del producto",
-        "Presentacion 1", "Precio 1", "Presentacion 2", "Precio 2", "Presentacion 3", "Precio 3"
-    ]
-    for col in columnas_a_limpiar:
-        if col in df.columns:
-            df[col] = df[col].apply(limpiar_texto)
-            
+    for col in ["Nombre imagen", "Modo de uso", "Activos principales", "Tipo", "Categoría", "Descripción", "Nombre del producto", "Presentacion 1", "Precio 1", "Presentacion 2", "Precio 2", "Presentacion 3", "Precio 3"]:
+        if col in df.columns: df[col] = df[col].apply(limpiar_texto)
     df["_orden"] = range(len(df))
     return df
 
-def agrupar_por_marca(df):
-    grupos = []
-    vistos = []
-    for marca in df["Marca"]:
-        marca_limpia = str(marca).strip()
-        if marca_limpia and marca_limpia.lower() != "nan" and marca_limpia not in vistos:
-            vistos.append(marca_limpia)
-            
-    for marca in vistos:
-        subset = df[df["Marca"].astype(str).str.strip() == marca].sort_values("_orden")
-        # Validamos que la marca tenga al menos un producto (por si todos tenían "N")
-        if not subset.empty:
-            grupos.append((marca, subset.to_dict("records")))
+def cargar_tipos(path):
+    if not os.path.exists(path): return {}
+    try:
+        df_tipos = pd.read_excel(path)
+        df_tipos.columns = [c.strip() for c in df_tipos.columns]
+        col_tipo = next((c for c in df_tipos.columns if c.lower() == "tipo"), None)
+        col_color = next((c for c in df_tipos.columns if c.lower() == "color"), None)
+        if not col_tipo or not col_color: return {}
+        df_tipos[col_tipo] = df_tipos[col_tipo].astype(str).str.strip()
+        df_tipos[col_color] = df_tipos[col_color].astype(str).str.strip()
+        return dict(zip(df_tipos[col_tipo], df_tipos[col_color]))
+    except: return {}
+
+def agrupar_por_tipo(df):
+    grupos, vistos = [], []
+    for tipo in df["Tipo"]:
+        t_limpio = str(tipo).strip()
+        if t_limpio and t_limpio.lower() != "nan" and t_limpio not in vistos:
+            vistos.append(t_limpio)
+    for tipo in vistos:
+        subset = df[df["Tipo"].astype(str).str.strip() == tipo].sort_values("_orden")
+        if not subset.empty: grupos.append((tipo, subset.to_dict("records")))
     return grupos
 
 # ============================================================
-# CELDA DE PRODUCTO
+# CELDA DE PRODUCTO (Diseño para 2x2)
 # ============================================================
 def _placeholder(w, h):
     t = Table([["Sin imagen"]], colWidths=[w], rowHeights=[h])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEEEEE")),
-        ("TEXTCOLOR", (0,0), (-1,-1), colors.grey),
-        ("ALIGN", (0,0), (-1,-1), "CENTER"),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-        ("FONTNAME", (0,0), (-1,-1), "Helvetica-Oblique"),
-    ]))
+    t.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,-1), colors.HexColor("#EEEEEE")), ("TEXTCOLOR", (0,0), (-1,-1), colors.grey), ("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("FONTNAME", (0,0), (-1,-1), "Helvetica-Oblique")]))
     return t
 
 def obtener_imagen_ajustada(img_path, max_w, max_h):
     if os.path.isfile(img_path):
         try:
-            with PILImage.open(img_path) as im:
-                w, h = im.size
+            with PILImage.open(img_path) as im: w, h = im.size
             ratio = min(max_w / w, max_h / h)
             img = Image(img_path, width=w*ratio, height=h*ratio)
             img.hAlign = "CENTER"
             return img
-        except Exception:
-            return _placeholder(max_w, max_h)
+        except: return _placeholder(max_w, max_h)
     return _placeholder(max_w, max_h)
+
 
 def celda_producto(row, ancho_celda, alto_celda):
     nombre_imagen = str(row.get("Nombre imagen", "")).strip()
     img_path = os.path.join(IMAGENES_DIR, nombre_imagen) if nombre_imagen and nombre_imagen.lower() != "nan" else ""
     
-    ancho_bloque_izq = ancho_celda * 0.33
-    ancho_col_derecha = ancho_celda * 0.67
+    ancho_bloque_izq = ancho_celda * 0.40
+    ancho_col_derecha = ancho_celda * 0.60
     
-    ancho_img_area = ancho_bloque_izq * 0.63
-    ancho_tabla_area = ancho_bloque_izq * 0.37
+    alto_img_area = alto_celda * 0.72
+    alto_tabla_area = alto_celda * 0.28
     
-    img = obtener_imagen_ajustada(img_path, ancho_img_area - 0.1*cm, alto_celda - 0.6*cm)
+    img = obtener_imagen_ajustada(img_path, ancho_bloque_izq - 0.4*cm, alto_img_area - 0.4*cm)
 
-    # --- CONSTRUCCIÓN DE LA TABLA DE PRESENTACIONES ---
-    filas_cuerpo = []
+    # --- CONSTRUCCIÓN DE LA LISTA DE PRECIOS (SIN TABLA) ---
+    lineas_precios = []
     for i in range(1, 4):
-        col_pres = f"Presentacion {i}"
-        col_prec = f"Precio {i}"
-        
+        col_pres, col_prec = f"Presentacion {i}", f"Precio {i}"
         pres_txt = str(row.get(col_pres, "")).strip()
         prec_txt = str(row.get(col_prec, "")).strip()
         
         if pres_txt and pres_txt.lower() != "nan":
+            prec_str = "Consultar"
             if prec_txt and prec_txt.lower() != "nan":
-                try:
-                    prec_str = f"${float(prec_txt):,.2f}"
-                except ValueError:
-                    prec_str = prec_txt
-            else:
-                prec_str = "Consultar"
-                
-            filas_cuerpo.append([
-                Paragraph(pres_txt, style_tabla_nombre),
-                Paragraph(prec_str, style_tabla_precio)
-            ])
+                try: prec_str = f"${float(prec_txt):,.2f}"
+                except: prec_str = prec_txt
             
-    if len(filas_cuerpo) > 0:
-        ancho_col_izq = ancho_tabla_area * 0.48
-        ancho_col_der = ancho_tabla_area * 0.52
-
-        tabla_pres = Table(filas_cuerpo, colWidths=[ancho_col_izq, ancho_col_der], rowHeights=[0.6*cm] * len(filas_cuerpo))
-        tabla_pres.setStyle(TableStyle([
-            ("ALIGN", (0,0), (-1,-1), "CENTER"), 
-            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-            ("LEFTPADDING", (0,0), (-1,-1), 2),
-            ("RIGHTPADDING", (0,0), (-1,-1), 2),
-            ("TOPPADDING", (0,0), (-1,-1), 0),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 0),
+            lineas_precios.append(f"<b>{pres_txt}</b> - {prec_str}")
             
-            ("BOX", (0,0), (-1,-1), 0.5, colors.HexColor("#CCCCCC")),
-            ("ROUNDEDCORNERS", [5, 5, 5, 5]),
-            
-            ("LINEBELOW", (0,0), (-1,-2), 0.5, colors.HexColor("#CCCCCC")),
-            ("LINEAFTER", (0,0), (0,-1), 0.5, colors.HexColor("#CCCCCC")),
-        ]))
+    if len(lineas_precios) > 0:
+        texto_precios = "<br/>".join(lineas_precios)
+        bloque_precios = Paragraph(texto_precios, style_tabla_precio)
         
         col_izquierda = Table(
-            [[img, tabla_pres]], 
-            colWidths=[ancho_img_area, ancho_tabla_area],
-            rowHeights=[alto_celda - 0.4*cm]
+            [[img], [bloque_precios]], 
+            colWidths=[ancho_bloque_izq],
+            rowHeights=[alto_img_area, alto_tabla_area]
         )
         col_izquierda.setStyle(TableStyle([
-            ("ALIGN", (0,0), (0,0), "CENTER"), 
-            ("VALIGN", (0,0), (0,0), "MIDDLE"), 
-            ("ALIGN", (1,0), (1,0), "CENTER"), 
-            ("VALIGN", (1,0), (1,0), "BOTTOM"), 
-            ("LEFTPADDING", (0,0), (-1,-1), 0),
-            ("RIGHTPADDING", (0,0), (-1,-1), 0),
-            ("TOPPADDING", (0,0), (-1,-1), 0),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 10), 
+            ("ALIGN", (0,0), (-1,-1), "CENTER"), 
+            ("VALIGN", (0,0), (0,0), "MIDDLE"),
+            ("VALIGN", (0,1), (0,1), "TOP"), 
+            ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
+            ("TOPPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), 
         ]))
     else:
-        col_izquierda = img
+        col_izquierda = Table([[img]], colWidths=[ancho_bloque_izq], rowHeights=[alto_celda])
+        col_izquierda.setStyle(TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE")]))
 
     # --- TEXTOS DE LA DERECHA ---
     nombre = Paragraph(str(row.get("Nombre del producto", "")), style_nombre)
     
     categoria_txt = str(row.get("Categoría", "")).strip()
-    if categoria_txt and categoria_txt.lower() != "nan":
-        categoria_prod = Paragraph(categoria_txt.upper(), style_categoria_producto)
-    else:
-        categoria_prod = ""
-        
-    # 1. LA DESCRIPCIÓN
-    desc_txt = str(row.get("Descripción", "")).strip()
-    desc = Paragraph(desc_txt if desc_txt and desc_txt.lower() != "nan" else "", style_desc)
+    categoria_prod = Paragraph(categoria_txt.upper(), style_categoria_producto) if categoria_txt and categoria_txt.lower() != "nan" else ""
     
-    # 2. LOS ACTIVOS
+    desc_txt = str(row.get("Descripción", "")).strip()
+    if desc_txt and desc_txt.lower() != "nan":
+        frases = desc_txt.replace(". ", "||").split("||")
+        frases = [f.strip() for f in frases if f.strip()]
+        if frases and not desc_txt.endswith("."):
+            frases[-1] += "."
+            
+        beneficios_html = ""
+        for frase in frases:
+            beneficios_html += f"<font color='#28a745'>✔</font> {frase}<br/>"
+            
+        desc = Paragraph(beneficios_html, style_desc)
+    else:
+        desc = ""
+        
     activos_txt = str(row.get("Activos principales", "")).strip()
     activos = Paragraph(f"<b>ACTIVOS:</b> {activos_txt}" if activos_txt and activos_txt.lower() != "nan" else "", style_modo)
     
-    # 3. EL MODO DE USO
     modo_txt = str(row.get("Modo de uso", "")).strip()
     modo = Paragraph(f"<b>MODO DE USO:</b> {modo_txt}" if modo_txt and modo_txt.lower() != "nan" else "", style_modo)
 
-    margen_total = 30 
+    margen_total = 15
     ancho_real_texto = ancho_col_derecha - margen_total
 
-    # El orden es: nombre, categoria, descripción, activos, modo
     texto_derecha = Table(
         [[nombre], [categoria_prod], [desc], [activos], [modo]],
         colWidths=[ancho_real_texto]
     )
     texto_derecha.setStyle(TableStyle([
-        ("ALIGN", (0,0), (-1,-1), "LEFT"), 
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("LEFTPADDING", (0,0), (-1,-1), 0), 
-        ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
         ("TOPPADDING", (0,0), (-1,-1), 0), 
-        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2), # Margen base para todas las filas
         
-        # AQUI ESTA EL AJUSTE: Aumentamos el padding inferior de la fila 2 (descripción)
-        ("BOTTOMPADDING", (0,2), (-1,2), 8), 
+        # --- MÁRGENES PERSONALIZADOS ---
+        ("BOTTOMPADDING", (0,1), (-1,1), 6), # 1. Margen entre Categoría y Descripción
+        ("BOTTOMPADDING", (0,2), (-1,2), 6), # 2. Margen entre Descripción y Activos
+        ("BOTTOMPADDING", (0,3), (-1,3), 6), # 3. Margen entre Activos y Modo de uso
     ]))
 
     contenido = Table(
@@ -291,41 +263,45 @@ def celda_producto(row, ancho_celda, alto_celda):
     contenido.setStyle(TableStyle([
         ("ALIGN", (0,0), (0,0), "CENTER"), 
         ("VALIGN", (0,0), (0,0), "MIDDLE"), 
-        ("ALIGN", (1,0), (1,0), "LEFT"),   
+        ("ALIGN", (1,0), (1,0), "LEFT"), 
         ("VALIGN", (1,0), (1,0), "MIDDLE"), 
-        ("LEFTPADDING", (0,0), (0,0), 10), 
-        ("RIGHTPADDING", (0,0), (0,0), 0),
-        ("LEFTPADDING", (1,0), (1,0), 15), 
-        ("RIGHTPADDING", (1,0), (1,0), 15), 
-        ("TOPPADDING", (0,0), (-1,-1), 10), 
-        ("BOTTOMPADDING", (0,0), (-1,-1), 10),
-        ("BOX", (0,0), (-1,-1), 3.5, COLOR_DORADO), 
-        ("ROUNDEDCORNERS", [12, 12, 12, 12]),
+        ("LEFTPADDING", (0,0), (0,0), 5), ("RIGHTPADDING", (0,0), (0,0), 0),
+        ("LEFTPADDING", (1,0), (1,0), 10), ("RIGHTPADDING", (1,0), (1,0), 5), 
+        ("TOPPADDING", (0,0), (-1,-1), 10), ("BOTTOMPADDING", (0,0), (-1,-1), 10),
+        ("BOX", (0,0), (-1,-1), 2.5, COLOR_DORADO), ("ROUNDEDCORNERS", [8, 8, 8, 8]),
     ]))
     return contenido
 
 # ============================================================
-# PÁGINA DE PRODUCTOS
+# PÁGINA DE PRODUCTOS (Cuadrícula 2x2)
 # ============================================================
 def pagina_productos(productos):
     ancho_util = A4[0] - 2.0*cm 
     alto_util  = A4[1] - 5.5*cm 
-    gap = 0.3*cm 
-    alto_celda = (alto_util - (gap * 3)) / 4
+    
+    gap_x = 0.5*cm
+    gap_y = 0.4*cm
+    
+    ancho_celda = (ancho_util - gap_x) / 2
+    alto_celda = (alto_util - gap_y) / 2
 
-    celdas = [celda_producto(p, ancho_util, alto_celda) for p in productos]
+    celdas = [celda_producto(p, ancho_celda, alto_celda) for p in productos]
     while len(celdas) < 4: celdas.append("")
 
     grid = Table(
-        [[celdas[0]], [Spacer(1, gap)], [celdas[1]], [Spacer(1, gap)],
-         [celdas[2]], [Spacer(1, gap)], [celdas[3]]],
-        colWidths=[ancho_util],
-        rowHeights=[alto_celda, gap, alto_celda, gap, alto_celda, gap, alto_celda]
+        [
+            [celdas[0], celdas[1]],
+            [celdas[2], celdas[3]]
+        ],
+        colWidths=[ancho_celda, ancho_celda],
+        rowHeights=[alto_celda, alto_celda]
     )
+    
     grid.setStyle(TableStyle([
         ("VALIGN", (0,0), (-1,-1), "MIDDLE"), 
-        ("LEFTPADDING", (0,0), (-1,-1), 0), 
-        ("RIGHTPADDING", (0,0), (-1,-1), 0)
+        ("ALIGN", (0,0), (-1,-1), "LEFT"),
+        ("LEFTPADDING", (0,0), (-1,-1), gap_x/2), ("RIGHTPADDING", (0,0), (-1,-1), gap_x/2),
+        ("TOPPADDING", (0,0), (-1,-1), gap_y/2), ("BOTTOMPADDING", (0,0), (-1,-1), gap_y/2),
     ]))
     return grid
 
@@ -335,28 +311,25 @@ def pagina_productos(productos):
 def header_limpio(canvas, doc):
     pass
 
-def header_footer_productos(canvas, doc):
+def header_footer_dinamico(canvas, doc, bg_color):
     canvas.saveState()
-    
     alto_header = 2.5*cm
-    canvas.setFillColor(colors.black)
+    canvas.setFillColor(bg_color)
     canvas.rect(0, A4[1] - alto_header, A4[0], alto_header, fill=1, stroke=0)
     
     if os.path.exists(LOGO_PATH):
         try:
-            with PILImage.open(LOGO_PATH) as im:
-                w, h = im.size
+            with PILImage.open(LOGO_PATH) as im: w, h = im.size
             ratio = min(6*cm / w, 1.8*cm / h)
             logo_w, logo_h = w * ratio, h * ratio
             canvas.drawImage(LOGO_PATH, A4[0] - logo_w - 1.5*cm, A4[1] - (alto_header/2) - (logo_h/2), width=logo_w, height=logo_h, mask='auto')
         except Exception: pass
 
-    marca_actual = getattr(doc, '_marca_actual', '')
-    
-    if marca_actual:
+    tipo_actual = getattr(doc, '_tipo_actual', '')
+    if tipo_actual:
         canvas.setFillColor(colors.white)
         canvas.setFont("Helvetica-Bold", 20)
-        canvas.drawString(1.5*cm, A4[1] - 1.5*cm, marca_actual.upper())
+        canvas.drawString(1.5*cm, A4[1] - 1.5*cm, tipo_actual.upper())
 
     canvas.setStrokeColor(COLOR_DORADO)
     canvas.setLineWidth(2)
@@ -376,7 +349,8 @@ def header_footer_productos(canvas, doc):
 # ============================================================
 def generar_y_fusionar():
     df = cargar_datos(EXCEL_PATH)
-    grupos = agrupar_por_marca(df)
+    tipos_colores = cargar_tipos(TIPOS_PATH)
+    grupos = agrupar_por_tipo(df)
 
     doc = BaseDocTemplate(
         OUTPUT_PDF, pagesize=A4,
@@ -386,48 +360,29 @@ def generar_y_fusionar():
     )
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="normal", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
     
-    doc.addPageTemplates([
-        PageTemplate(id="limpia", frames=[frame], onPage=header_limpio)
-    ])
+    doc.addPageTemplates([PageTemplate(id="limpia", frames=[frame], onPage=header_limpio)])
 
     story = []
-    total_grupos = len(grupos)
-    
     story.append(NextPageTemplate("limpia"))
 
-    for idx, (marca, prods) in enumerate(grupos, start=1):
-        categoria_ejemplo = ""
-        for p in prods:
-            cat = str(p.get("Categoría", "")).strip()
-            if cat and cat.lower() != "nan":
-                categoria_ejemplo = cat
-                break
-                
+    for idx, (tipo, prods) in enumerate(grupos, start=1):
+        color_hex = tipos_colores.get(tipo, "#1F3864")
+        color_fondo = obtener_color_hex(color_hex, COLOR_PRIMARIO)
         nombre_plantilla_prods = f"prods_{idx}"
         
-        def crear_header_con_datos(m, c):
+        def crear_header_con_datos(t_name, bg_col):
             def custom_header(canvas, doc):
-                doc._marca_actual = m
-                doc._categoria_actual = c
-                header_footer_productos(canvas, doc)
+                doc._tipo_actual = t_name
+                header_footer_dinamico(canvas, doc, bg_col)
             return custom_header
 
-        doc.addPageTemplates([
-            PageTemplate(id=nombre_plantilla_prods, frames=[frame], onPage=crear_header_con_datos(marca, categoria_ejemplo))
-        ])
+        doc.addPageTemplates([PageTemplate(id=nombre_plantilla_prods, frames=[frame], onPage=crear_header_con_datos(tipo, color_fondo))])
         
-        # --- PÁGINA SEPARADORA (Sin header) ---
         story.append(Spacer(1, 5*cm))
-        story.append(Paragraph(marca.upper(), style_marca_titulo))
+        story.append(Paragraph(tipo.upper(), style_tipo_titulo))
         story.append(Spacer(1, 0.5*cm))
+        story.append(Table([[""]], colWidths=[6*cm], rowHeights=[0.15*cm], style=TableStyle([("BACKGROUND", (0,0), (-1,-1), color_fondo)])))
         
-        # Línea decorativa
-        story.append(Table(
-            [[""]], colWidths=[6*cm], rowHeights=[0.15*cm],
-            style=TableStyle([("BACKGROUND", (0,0), (-1,-1), COLOR_DORADO)]),
-        ))
-        
-        # --- PÁGINAS DE PRODUCTOS (Con header) ---
         story.append(NextPageTemplate(nombre_plantilla_prods))
         story.append(PageBreak())
 
@@ -437,7 +392,6 @@ def generar_y_fusionar():
             if i + 4 < len(prods):
                 story.append(PageBreak())
             
-        # Volvemos a la plantilla limpia para el siguiente separador
         story.append(NextPageTemplate("limpia"))
         
     doc.build(story)
@@ -447,13 +401,10 @@ def generar_y_fusionar():
         print(f"🖇️  Añadiendo la portada '{PORTADA_PDF}' al inicio...")
         writer = PdfWriter()
         reader_portada = PdfReader(PORTADA_PDF)
-        for page in reader_portada.pages:
-            writer.add_page(page)
+        for page in reader_portada.pages: writer.add_page(page)
         reader_catalogo = PdfReader(OUTPUT_PDF)
-        for page in reader_catalogo.pages:
-            writer.add_page(page)
-        with open(OUTPUT_FINAL, "wb") as f:
-            writer.write(f)
+        for page in reader_catalogo.pages: writer.add_page(page)
+        with open(OUTPUT_FINAL, "wb") as f: writer.write(f)
         print(f"✅ ¡Catálogo Final generado exitosamente!: {OUTPUT_FINAL}")
         os.remove(OUTPUT_PDF)
     else:
