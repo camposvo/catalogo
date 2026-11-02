@@ -1,3 +1,6 @@
+# Archivos temporales y de bloqueo (LibreOffice / OpenOffice)
+.~lock.*#
+
 # Entorno virtual
 .venv/
 venv/
