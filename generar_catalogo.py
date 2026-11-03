@@ -75,10 +75,11 @@ style_tabla_nombre = ParagraphStyle(
     fontName="Helvetica-Bold", fontSize=6, leading=7.5, textColor=colors.black,
     alignment=TA_CENTER
 )
+# NUEVO ESTILO: Un poco más grande, alineado a la izquierda y con espacio entre líneas
 style_tabla_precio = ParagraphStyle(
     "tabla_precio", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=7, leading=8.5, textColor=COLOR_PRECIO,
-    alignment=TA_CENTER
+    fontName="Helvetica", fontSize=8.5, leading=11, textColor=colors.black,
+    alignment=TA_LEFT 
 )
 
 # ============================================================
@@ -187,22 +188,26 @@ def celda_producto(row, ancho_celda, alto_celda):
                 try: prec_str = f"${float(prec_txt):,.2f}"
                 except: prec_str = prec_txt
             
-            lineas_precios.append(f"<b>{pres_txt}</b> - {prec_str}")
+            # Barra "|", presentación en negro y precio en rojo
+            lineas_precios.append(f"<font color='#222222'><b>{pres_txt}</b></font> | <font color='#C00000'><b>{prec_str}</b></font>")
             
     if len(lineas_precios) > 0:
         texto_precios = "<br/>".join(lineas_precios)
         bloque_precios = Paragraph(texto_precios, style_tabla_precio)
         
+        # Ajustamos la alineación para que la lista de precios quede alineada a la izquierda
         col_izquierda = Table(
             [[img], [bloque_precios]], 
             colWidths=[ancho_bloque_izq],
             rowHeights=[alto_img_area, alto_tabla_area]
         )
         col_izquierda.setStyle(TableStyle([
-            ("ALIGN", (0,0), (-1,-1), "CENTER"), 
+            ("ALIGN", (0,0), (0,0), "CENTER"), # Imagen al centro
+            ("ALIGN", (0,1), (0,1), "LEFT"),   # Precios a la izquierda
             ("VALIGN", (0,0), (0,0), "MIDDLE"),
             ("VALIGN", (0,1), (0,1), "TOP"), 
-            ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
+            ("LEFTPADDING", (0,0), (0,0), 0), ("RIGHTPADDING", (0,0), (0,0), 0),
+            ("LEFTPADDING", (0,1), (0,1), 15), # Damos un margen para que no pegue al borde
             ("TOPPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), 
         ]))
     else:
