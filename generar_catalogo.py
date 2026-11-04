@@ -161,13 +161,15 @@ def obtener_imagen_ajustada(img_path, max_w, max_h):
         except: return _placeholder(max_w, max_h)
     return _placeholder(max_w, max_h)
 
-
 def celda_producto(row, ancho_celda, alto_celda):
     nombre_imagen = str(row.get("Nombre imagen", "")).strip()
     img_path = os.path.join(IMAGENES_DIR, nombre_imagen) if nombre_imagen and nombre_imagen.lower() != "nan" else ""
     
     ancho_bloque_izq = ancho_celda * 0.40
     ancho_col_derecha = ancho_celda * 0.60
+    
+    # Gap FIJO entre imagen y precios (siempre igual en todas las celdas)
+    GAP_IMG_PRECIOS = 0.35 * cm
     
     alto_img_area = alto_celda * 0.72
     alto_tabla_area = alto_celda * 0.28
@@ -187,31 +189,40 @@ def celda_producto(row, ancho_celda, alto_celda):
                 try: prec_str = f"${float(prec_txt):,.2f}"
                 except: prec_str = prec_txt
             
-            # Barra "|", presentación en negro y precio en rojo
             lineas_precios.append(f"<font color='#222222'><b>{pres_txt}</b></font> | <font color='#C00000'><b>{prec_str}</b></font>")
             
     if len(lineas_precios) > 0:
         texto_precios = "<br/>".join(lineas_precios)
-        bloque_precios = Paragraph(texto_precios, style_tabla_precio)
+        # Centrado horizontal para que coincida con la imagen
+        style_precios_centrado = ParagraphStyle(
+            "precios_centrado", parent=style_tabla_precio, alignment=TA_CENTER
+        )
+        bloque_precios = Paragraph(texto_precios, style_precios_centrado)
         
-        # Ajustamos la alineación para que la lista de precios quede alineada a la izquierda
         col_izquierda = Table(
             [[img], [bloque_precios]], 
             colWidths=[ancho_bloque_izq],
             rowHeights=[alto_img_area, alto_tabla_area]
         )
         col_izquierda.setStyle(TableStyle([
-            ("ALIGN", (0,0), (0,0), "CENTER"), # Imagen al centro
-            ("ALIGN", (0,1), (0,1), "LEFT"),   # Precios a la izquierda
-            ("VALIGN", (0,0), (0,0), "MIDDLE"),
+            ("ALIGN", (0,0), (0,0), "CENTER"),   # Imagen centrada
+            ("ALIGN", (0,1), (0,1), "CENTER"),   # Precios centrados (igual que imagen)
+            ("VALIGN", (0,0), (0,0), "BOTTOM"),  # Imagen pegada al fondo de su área
             ("VALIGN", (0,1), (0,1), "TOP"), 
-            ("LEFTPADDING", (0,0), (0,0), 0), ("RIGHTPADDING", (0,0), (0,0), 0),
-            ("LEFTPADDING", (0,1), (0,1), 15), # Damos un margen para que no pegue al borde
-            ("TOPPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0), 
+            ("LEFTPADDING", (0,0), (-1,-1), 0), 
+            ("RIGHTPADDING", (0,0), (-1,-1), 0),
+            ("TOPPADDING", (0,0), (0,0), 0),
+            ("BOTTOMPADDING", (0,0), (0,0), 0),
+            # Padding-top FIJO en la fila de precios -> gap constante desde la imagen
+            ("TOPPADDING", (0,1), (0,1), GAP_IMG_PRECIOS),
+            ("BOTTOMPADDING", (0,1), (0,1), 0),
         ]))
     else:
         col_izquierda = Table([[img]], colWidths=[ancho_bloque_izq], rowHeights=[alto_celda])
-        col_izquierda.setStyle(TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "MIDDLE")]))
+        col_izquierda.setStyle(TableStyle([
+            ("ALIGN", (0,0), (-1,-1), "CENTER"),
+            ("VALIGN", (0,0), (-1,-1), "BOTTOM")  # También al fondo si no hay precios
+        ]))
 
     # --- TEXTOS DE LA DERECHA ---
     nombre = Paragraph(str(row.get("Nombre del producto", "")), style_nombre)
@@ -251,12 +262,10 @@ def celda_producto(row, ancho_celda, alto_celda):
         ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "TOP"),
         ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
         ("TOPPADDING", (0,0), (-1,-1), 0), 
-        ("BOTTOMPADDING", (0,0), (-1,-1), 2), # Margen base para todas las filas
-        
-        # --- MÁRGENES PERSONALIZADOS ---
-        ("BOTTOMPADDING", (0,1), (-1,1), 6), # 1. Margen entre Categoría y Descripción
-        ("BOTTOMPADDING", (0,2), (-1,2), 6), # 2. Margen entre Descripción y Activos
-        ("BOTTOMPADDING", (0,3), (-1,3), 6), # 3. Margen entre Activos y Modo de uso
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING", (0,1), (-1,1), 6),
+        ("BOTTOMPADDING", (0,2), (-1,2), 6),
+        ("BOTTOMPADDING", (0,3), (-1,3), 6),
     ]))
 
     contenido = Table(
@@ -275,7 +284,6 @@ def celda_producto(row, ancho_celda, alto_celda):
         ("BOX", (0,0), (-1,-1), 2.5, COLOR_DORADO), ("ROUNDEDCORNERS", [8, 8, 8, 8]),
     ]))
     return contenido
-
 # ============================================================
 # PÁGINA DE PRODUCTOS (Cuadrícula 2x2)
 # ============================================================
