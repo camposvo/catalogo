@@ -75,7 +75,6 @@ style_tabla_nombre = ParagraphStyle(
     fontName="Helvetica-Bold", fontSize=6, leading=7.5, textColor=colors.black,
     alignment=TA_CENTER
 )
-# NUEVO ESTILO: Un poco más grande, alineado a la izquierda y con espacio entre líneas
 style_tabla_precio = ParagraphStyle(
     "tabla_precio", parent=styles["Normal"],
     fontName="Helvetica", fontSize=8.5, leading=11, textColor=colors.black,
@@ -365,38 +364,54 @@ def generar_y_fusionar():
     )
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="normal", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
     
+    # 1. Registramos la plantilla limpia (para separadores o portada)
     doc.addPageTemplates([PageTemplate(id="limpia", frames=[frame], onPage=header_limpio)])
 
+    # 2. Pre-configuramos la plantilla del PRIMER tipo
+    primer_tipo, primeros_prods = grupos[0]
+    color_hex = tipos_colores.get(primer_tipo, "#1F3864")
+    color_fondo = obtener_color_hex(color_hex, COLOR_PRIMARIO)
+    
+    def crear_header_inicial(t_name, bg_col):
+        def custom_header(canvas, doc):
+            doc._tipo_actual = t_name
+            header_footer_dinamico(canvas, doc, bg_col)
+        return custom_header
+
+    # Registramos la plantilla "p1" y la asignamos como la plantilla por defecto del documento
+    doc.addPageTemplates([
+        PageTemplate(id="p1", frames=[frame], onPage=crear_header_inicial(primer_tipo, color_fondo))
+    ])
+    doc._firstPageTemplateIndex = 1 # Forzamos a que use la plantilla p1 (la de índice 1) en la primera página
+
     story = []
-    story.append(NextPageTemplate("limpia"))
 
     for idx, (tipo, prods) in enumerate(grupos, start=1):
-        color_hex = tipos_colores.get(tipo, "#1F3864")
-        color_fondo = obtener_color_hex(color_hex, COLOR_PRIMARIO)
-        nombre_plantilla_prods = f"prods_{idx}"
-        
-        def crear_header_con_datos(t_name, bg_col):
-            def custom_header(canvas, doc):
-                doc._tipo_actual = t_name
-                header_footer_dinamico(canvas, doc, bg_col)
-            return custom_header
+        if idx > 1:
+            # Para los tipos 2 en adelante, creamos su plantilla, la asignamos y saltamos de página
+            color_hex = tipos_colores.get(tipo, "#1F3864")
+            color_fondo = obtener_color_hex(color_hex, COLOR_PRIMARIO)
+            nombre_plantilla_prods = f"prods_{idx}"
+            
+            def crear_header_con_datos(t_name, bg_col):
+                def custom_header(canvas, doc):
+                    doc._tipo_actual = t_name
+                    header_footer_dinamico(canvas, doc, bg_col)
+                return custom_header
 
-        doc.addPageTemplates([PageTemplate(id=nombre_plantilla_prods, frames=[frame], onPage=crear_header_con_datos(tipo, color_fondo))])
-        
-        story.append(Spacer(1, 5*cm))
-        story.append(Paragraph(tipo.upper(), style_tipo_titulo))
-        story.append(Spacer(1, 0.5*cm))
-        story.append(Table([[""]], colWidths=[6*cm], rowHeights=[0.15*cm], style=TableStyle([("BACKGROUND", (0,0), (-1,-1), color_fondo)])))
-        
-        story.append(NextPageTemplate(nombre_plantilla_prods))
-        story.append(PageBreak())
+            doc.addPageTemplates([PageTemplate(id=nombre_plantilla_prods, frames=[frame], onPage=crear_header_con_datos(tipo, color_fondo))])
+            
+            story.append(NextPageTemplate(nombre_plantilla_prods))
+            story.append(PageBreak())
 
+        # Imprimimos los productos de este tipo
         for i in range(0, len(prods), 4):
             grid = pagina_productos(prods[i:i+4])
             story.append(grid)
             if i + 4 < len(prods):
                 story.append(PageBreak())
             
+        # Al terminar el tipo, volvemos a la plantilla limpia para el próximo cambio
         story.append(NextPageTemplate("limpia"))
         
     doc.build(story)
