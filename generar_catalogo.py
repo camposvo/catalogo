@@ -5,13 +5,14 @@ Uso: python generar_catalogo.py
 """
 
 import os
+import math
 import pandas as pd
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.platypus import (
     BaseDocTemplate, PageTemplate, Frame, Paragraph, Spacer,
-    Table, TableStyle, Image, PageBreak, NextPageTemplate
+    Table, TableStyle, Image, PageBreak, NextPageTemplate, Flowable
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
@@ -23,10 +24,12 @@ from pypdf import PdfWriter, PdfReader
 # ============================================================
 EXCEL_PATH     = "catalogo.xlsx"
 TIPOS_PATH     = "tipos.xlsx"
-IMAGENES_DIR   = "imagenes"
+IMAGENES_DIR   = "imagenes" 
+ICONOS_DIR     = ""         
 LOGO_PATH      = "logo.png"  
 PORTADA_PDF    = "portada.pdf" 
-OUTPUT_PDF     = "Catalogo_Temporal.pdf" 
+OUTPUT_INDICE  = "Indice_Temporal.pdf"
+OUTPUT_PRODS   = "Productos_Temporal.pdf"
 OUTPUT_FINAL   = "Catalogo_Distribuidora_Bellingieri_Final.pdf" 
 
 COLOR_PRIMARIO   = colors.HexColor("#1F3864")
@@ -34,52 +37,33 @@ COLOR_TEXTO      = colors.HexColor("#222222")
 COLOR_PRECIO     = colors.HexColor("#C00000")
 COLOR_DORADO     = colors.HexColor("#C5A059") 
 COLOR_CELESTE    = colors.HexColor("#00AEEF") 
+COLOR_GRIS_CAJA  = colors.HexColor("#E0E0E0")
 
 EMPRESA   = "Distribuidora Bellingieri"
 SUBTITULO = "Catálogo de Productos"
+
+OFFSET_PAGINAS = 0
 
 # ============================================================
 # ESTILOS
 # ============================================================
 styles = getSampleStyleSheet()
 
-style_nombre = ParagraphStyle(
-    "nombre", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=10, leading=12, 
-    textColor=COLOR_PRIMARIO, spaceAfter=2,
-)
-style_categoria_producto = ParagraphStyle(
-    "categoria_producto", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=7, leading=8.5, 
-    textColor=COLOR_DORADO, spaceAfter=3,
-)
-style_desc = ParagraphStyle(
-    "desc", parent=styles["Normal"],
-    fontName="Helvetica", fontSize=7.5, leading=9.5, 
-    textColor=COLOR_TEXTO, spaceAfter=4,
-)
-style_modo = ParagraphStyle(
-    "modo", parent=styles["Normal"],
-    fontName="Helvetica", fontSize=7, leading=9, 
-    textColor=colors.HexColor("#444444"), spaceAfter=4,
-)
-style_tipo_titulo = ParagraphStyle(
-    "tipo_titulo", parent=styles["Heading1"],
-    fontName="Helvetica-Bold", fontSize=36, leading=42,
-    textColor=COLOR_PRIMARIO, alignment=TA_LEFT,
-)
+style_nombre = ParagraphStyle("nombre", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=10, leading=12, textColor=COLOR_PRIMARIO, spaceAfter=2)
+style_categoria_producto = ParagraphStyle("categoria_producto", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=7, leading=8.5, textColor=COLOR_DORADO, spaceAfter=3)
+style_desc = ParagraphStyle("desc", parent=styles["Normal"], fontName="Helvetica", fontSize=7.5, leading=9.5, textColor=COLOR_TEXTO, spaceAfter=4)
+style_modo = ParagraphStyle("modo", parent=styles["Normal"], fontName="Helvetica", fontSize=7, leading=9, textColor=colors.HexColor("#444444"), spaceAfter=4)
+style_tabla_nombre = ParagraphStyle("tabla_nombre", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=6, leading=7.5, textColor=colors.black, alignment=TA_CENTER)
+style_tabla_precio = ParagraphStyle("tabla_precio", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=11, textColor=colors.black, alignment=TA_CENTER)
 
-# Estilos para la tabla de precios
-style_tabla_nombre = ParagraphStyle(
-    "tabla_nombre", parent=styles["Normal"],
-    fontName="Helvetica-Bold", fontSize=6, leading=7.5, textColor=colors.black,
-    alignment=TA_CENTER
+# Estilos Índice
+style_index_texto_unico = ParagraphStyle(
+    "index_texto_unico", parent=styles["Normal"],
+    fontName="Helvetica-Oblique", fontSize=14, leading=16, 
+    textColor=COLOR_PRIMARIO, spaceAfter=20
 )
-style_tabla_precio = ParagraphStyle(
-    "tabla_precio", parent=styles["Normal"],
-    fontName="Helvetica", fontSize=8.5, leading=11, textColor=colors.black,
-    alignment=TA_LEFT 
-)
+style_index_tipo = ParagraphStyle("index_tipo", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=COLOR_TEXTO, alignment=TA_CENTER)
+style_index_paginas = ParagraphStyle("index_paginas", parent=styles["Normal"], fontName="Helvetica", fontSize=7.5, leading=9, textColor=colors.HexColor("#666666"), alignment=TA_CENTER)
 
 # ============================================================
 # FUNCIONES AUXILIARES
@@ -115,35 +99,217 @@ def cargar_datos(path):
         df = df[df["Estatus"] == "Y"]
     for col in ["Nombre imagen", "Modo de uso", "Activos principales", "Tipo", "Categoría", "Descripción", "Nombre del producto", "Presentacion 1", "Precio 1", "Presentacion 2", "Precio 2", "Presentacion 3", "Precio 3"]:
         if col in df.columns: df[col] = df[col].apply(limpiar_texto)
-    df["_orden"] = range(len(df))
-    return df
+    return df.to_dict("records")
 
 def cargar_tipos(path):
     if not os.path.exists(path): return {}
     try:
         df_tipos = pd.read_excel(path)
         df_tipos.columns = [c.strip() for c in df_tipos.columns]
+        
         col_tipo = next((c for c in df_tipos.columns if c.lower() == "tipo"), None)
         col_color = next((c for c in df_tipos.columns if c.lower() == "color"), None)
+        col_img = next((c for c in df_tipos.columns if "imagen" in c.lower()), None)
+        
         if not col_tipo or not col_color: return {}
+        
+        df_tipos = df_tipos.fillna("")
         df_tipos[col_tipo] = df_tipos[col_tipo].astype(str).str.strip()
         df_tipos[col_color] = df_tipos[col_color].astype(str).str.strip()
-        return dict(zip(df_tipos[col_tipo], df_tipos[col_color]))
-    except: return {}
-
-def agrupar_por_tipo(df):
-    grupos, vistos = [], []
-    for tipo in df["Tipo"]:
-        t_limpio = str(tipo).strip()
-        if t_limpio and t_limpio.lower() != "nan" and t_limpio not in vistos:
-            vistos.append(t_limpio)
-    for tipo in vistos:
-        subset = df[df["Tipo"].astype(str).str.strip() == tipo].sort_values("_orden")
-        if not subset.empty: grupos.append((tipo, subset.to_dict("records")))
-    return grupos
+        if col_img:
+            df_tipos[col_img] = df_tipos[col_img].astype(str).str.strip()
+            
+        resultado = {}
+        for _, row in df_tipos.iterrows():
+            tipo = row[col_tipo]
+            color = row[col_color]
+            imagen = row[col_img] if col_img else ""
+            resultado[tipo] = {"color": color, "imagen": imagen}
+            
+        return resultado
+    except Exception as e: 
+        print(f"Error cargando tipos: {e}")
+        return {}
 
 # ============================================================
-# CELDA DE PRODUCTO (Diseño para 2x2)
+# CLASE PERSONALIZADA PARA DIBUJAR LA CUADRÍCULA (SOLUCIÓN DEFINITIVA)
+# ============================================================
+class CuadriculaIndice(Flowable):
+    def __init__(self, tipos_unicos, paginas_por_tipo, tipos_data, margen_izq_frame):
+        super().__init__()
+        self.tipos = tipos_unicos
+        self.paginas = paginas_por_tipo
+        self.data = tipos_data
+        
+        # Ancho real de la hoja A4
+        self.ancho_hoja = A4[0]
+        
+        self.ancho_caja = 4.5 * cm
+        self.alto_caja = 4.2 * cm
+        self.espacio_x = 0.8 * cm
+        self.espacio_y = 0.5 * cm
+        
+        # Cálculo del ancho total de la cuadrícula (3 columnas)
+        self.ancho_total = (self.ancho_caja * 3) + (self.espacio_x * 2)
+        
+        # EL TRUCO: Restamos el margen izquierdo del Frame para que la coordenada 0 sea el borde real del papel
+        self.x_inicial = ((self.ancho_hoja - self.ancho_total) / 2) - margen_izq_frame
+        
+        self.filas = (len(self.tipos) + 2) // 3
+        self.alto_total = (self.alto_caja * self.filas) + (self.espacio_y * (self.filas - 1))
+
+    def wrap(self, availWidth, availHeight):
+        # Retornamos el ancho que ReportLab espera. Le pasamos el ancho del frame.
+        return (availWidth, self.alto_total)
+
+    def draw(self):
+        canvas = self.canv
+
+        for i, tipo in enumerate(self.tipos):
+            col = i % 3
+            fila = i // 3
+            
+            # Centrar la caja si es la última fila y solo hay 1 elemento
+            if fila == self.filas - 1 and len(self.tipos) % 3 == 1:
+                col = 1
+            
+            x_pos = self.x_inicial + (col * (self.ancho_caja + self.espacio_x))
+            y_pos = self.alto_total - (fila * (self.alto_caja + self.espacio_y)) - self.alto_caja
+
+            # Obtener datos del tipo
+            paginas = self.paginas.get(tipo, [])
+            if paginas:
+                if len(paginas) == 1: rango_str = str(paginas[0])
+                else:
+                    es_consecutivo = all(paginas[j+1] == paginas[j] + 1 for j in range(len(paginas)-1))
+                    if es_consecutivo: rango_str = f"{paginas[0]} - {paginas[-1]}"
+                    else: rango_str = ", ".join(map(str, paginas))
+            else: rango_str = "?"
+
+            info = self.data.get(tipo, {})
+            color_hex = info.get("color", "#1F3864")
+            nombre_img = info.get("imagen", "")
+            color_borde = obtener_color_hex(color_hex, COLOR_PRIMARIO)
+
+            # Sombra
+            canvas.setFillColor(COLOR_GRIS_CAJA)
+            canvas.roundRect(x_pos + 2, y_pos - 2, self.ancho_caja, self.alto_caja, 6, stroke=0, fill=1)
+            
+            # Caja Blanca
+            canvas.setFillColor(colors.white)
+            canvas.setStrokeColor(COLOR_GRIS_CAJA)
+            canvas.setLineWidth(0.5)
+            canvas.roundRect(x_pos, y_pos, self.ancho_caja, self.alto_caja, 6, stroke=1, fill=1)
+            
+            # Línea superior
+            canvas.setStrokeColor(color_borde)
+            canvas.setLineWidth(4)
+            canvas.line(x_pos + 1, y_pos + self.alto_caja, x_pos + self.ancho_caja - 1, y_pos + self.alto_caja)
+
+            # Icono
+            centro_x = x_pos + self.ancho_caja / 2
+            if nombre_img and nombre_img.lower() != "nan":
+                ruta = os.path.join(ICONOS_DIR, nombre_img)
+                if os.path.isfile(ruta):
+                    try:
+                        canvas.drawImage(ruta, centro_x - (1.0*cm)/2, y_pos + self.alto_caja - 2.5*cm, width=1.0*cm, height=1.0*cm, mask='auto')
+                    except: pass
+            
+            # Textos
+            canvas.setFillColor(COLOR_TEXTO)
+            canvas.setFont("Helvetica-Bold", 8)
+            canvas.drawCentredString(centro_x, y_pos + 0.9*cm, tipo.upper())
+            
+            texto_pags = "Págs. "
+            ancho_pags = canvas.stringWidth(texto_pags, "Helvetica", 8)
+            ancho_num = canvas.stringWidth(rango_str, "Helvetica-Bold", 11)
+            ancho_total_texto = ancho_pags + ancho_num
+            
+            inicio_x = centro_x - (ancho_total_texto / 2)
+            
+            canvas.setFillColor(colors.HexColor("#555555"))
+            canvas.setFont("Helvetica", 8)
+            canvas.drawString(inicio_x, y_pos + 0.4*cm, texto_pags)
+            
+            canvas.setFillColor(COLOR_TEXTO)
+            canvas.setFont("Helvetica-Bold", 11)
+            canvas.drawString(inicio_x + ancho_pags, y_pos + 0.4*cm, rango_str)
+
+# ============================================================
+# DISEÑO DE LA PÁGINA DE ÍNDICE
+# ============================================================
+def generar_pdf_indice(productos, tipos_data, output_path):
+    # Alineamos los márgenes del Frame a 3 cm para que coincidan con la cuadrícula
+    doc = BaseDocTemplate(
+        output_path, pagesize=A4,
+        leftMargin=3.0*cm, rightMargin=3.0*cm,
+        topMargin=3.0*cm, bottomMargin=2.0*cm, 
+    )
+    # El Frame ocupará exactamente 15 cm de ancho (21 - 3 - 3)
+    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="normal", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
+    doc.addPageTemplates([PageTemplate(id="limpia", frames=[frame], onPage=lambda canvas, doc: None)])
+
+    elementos = []
+
+    # --- CABECERA CON LOGO Y TÍTULO GRANDE ---
+    logo_img = ""
+    if os.path.exists(LOGO_PATH):
+        try:
+            with PILImage.open(LOGO_PATH) as im: w, h = im.size
+            max_h = 1.5*cm
+            ratio = max_h / h
+            logo_img = Image(LOGO_PATH, width=w*ratio, height=max_h)
+            logo_img.hAlign = "LEFT"
+        except Exception: pass
+
+    style_catalogo_grande = ParagraphStyle(
+        "catalogo_grande", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=28, leading=32, 
+        textColor=COLOR_PRIMARIO, alignment=TA_RIGHT
+    )
+    texto_catalogo = Paragraph("CATÁLOGO", style_catalogo_grande)
+
+    # Usamos el ancho exacto del Frame (15cm) para que la cabecera encaje
+    tabla_header = Table([[logo_img, texto_catalogo]], colWidths=[doc.width * 0.5, doc.width * 0.5])
+    tabla_header.setStyle(TableStyle([
+        ("VALIGN", (0,0), (0,0), "MIDDLE"), ("VALIGN", (1,0), (1,0), "MIDDLE"),
+        ("ALIGN", (0,0), (0,0), "LEFT"), ("ALIGN", (1,0), (1,0), "RIGHT"),
+        ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
+        ("TOPPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 0),
+        ("LINEBELOW", (0,0), (-1,-1), 1, COLOR_GRIS_CAJA),
+    ]))
+    
+    elementos.append(tabla_header)
+    elementos.append(Spacer(1, 1.5*cm))
+    
+    # --- TEXTO ÚNICO CENTRAL ---
+    elementos.append(Paragraph("Encuentra la solución en segundos", style_index_texto_unico))
+    elementos.append(Spacer(1, 0.5*cm))
+
+    # Cálculo de páginas
+    offset_indice = 2 if os.path.exists(PORTADA_PDF) else 1
+    paginas_por_tipo = {}
+    pagina_actual = offset_indice + 1
+    
+    for i in range(0, len(productos), 4):
+        pagina = productos[i:i+4]
+        tipo = pagina[0]["Tipo"]
+        if tipo not in paginas_por_tipo: paginas_por_tipo[tipo] = []
+        paginas_por_tipo[tipo].append(pagina_actual)
+        pagina_actual += 1
+
+    tipos_unicos = []
+    for p in productos:
+        if p["Tipo"] not in tipos_unicos: tipos_unicos.append(p["Tipo"])
+
+    # Le pasamos doc.leftMargin a la clase para que sepa cuánto restar
+    cuadricula = CuadriculaIndice(tipos_unicos, paginas_por_tipo, tipos_data, doc.leftMargin)
+    elementos.append(cuadricula)
+    
+    doc.build(elementos)
+
+# ============================================================
+# CELDA DE PRODUCTO
 # ============================================================
 def _placeholder(w, h):
     t = Table([["Sin imagen"]], colWidths=[w], rowHeights=[h])
@@ -168,15 +334,12 @@ def celda_producto(row, ancho_celda, alto_celda):
     ancho_bloque_izq = ancho_celda * 0.40
     ancho_col_derecha = ancho_celda * 0.60
     
-    # Gap FIJO entre imagen y precios (siempre igual en todas las celdas)
-    GAP_IMG_PRECIOS = 0.35 * cm
-    
     alto_img_area = alto_celda * 0.72
     alto_tabla_area = alto_celda * 0.28
+    GAP_IMG_PRECIOS = 0.35 * cm
     
     img = obtener_imagen_ajustada(img_path, ancho_bloque_izq - 0.4*cm, alto_img_area - 0.4*cm)
 
-    # --- CONSTRUCCIÓN DE LA LISTA DE PRECIOS (SIN TABLA) ---
     lineas_precios = []
     for i in range(1, 4):
         col_pres, col_prec = f"Presentacion {i}", f"Precio {i}"
@@ -188,45 +351,25 @@ def celda_producto(row, ancho_celda, alto_celda):
             if prec_txt and prec_txt.lower() != "nan":
                 try: prec_str = f"${float(prec_txt):,.2f}"
                 except: prec_str = prec_txt
-            
             lineas_precios.append(f"<font color='#222222'><b>{pres_txt}</b></font> | <font color='#C00000'><b>{prec_str}</b></font>")
             
     if len(lineas_precios) > 0:
         texto_precios = "<br/>".join(lineas_precios)
-        # Centrado horizontal para que coincida con la imagen
-        style_precios_centrado = ParagraphStyle(
-            "precios_centrado", parent=style_tabla_precio, alignment=TA_CENTER
-        )
-        bloque_precios = Paragraph(texto_precios, style_precios_centrado)
+        bloque_precios = Paragraph(texto_precios, style_tabla_precio)
         
-        col_izquierda = Table(
-            [[img], [bloque_precios]], 
-            colWidths=[ancho_bloque_izq],
-            rowHeights=[alto_img_area, alto_tabla_area]
-        )
+        col_izquierda = Table([[img], [bloque_precios]], colWidths=[ancho_bloque_izq], rowHeights=[alto_img_area, alto_tabla_area])
         col_izquierda.setStyle(TableStyle([
-            ("ALIGN", (0,0), (0,0), "CENTER"),   # Imagen centrada
-            ("ALIGN", (0,1), (0,1), "CENTER"),   # Precios centrados (igual que imagen)
-            ("VALIGN", (0,0), (0,0), "BOTTOM"),  # Imagen pegada al fondo de su área
-            ("VALIGN", (0,1), (0,1), "TOP"), 
-            ("LEFTPADDING", (0,0), (-1,-1), 0), 
-            ("RIGHTPADDING", (0,0), (-1,-1), 0),
-            ("TOPPADDING", (0,0), (0,0), 0),
-            ("BOTTOMPADDING", (0,0), (0,0), 0),
-            # Padding-top FIJO en la fila de precios -> gap constante desde la imagen
-            ("TOPPADDING", (0,1), (0,1), GAP_IMG_PRECIOS),
-            ("BOTTOMPADDING", (0,1), (0,1), 0),
+            ("ALIGN", (0,0), (0,0), "CENTER"), ("ALIGN", (0,1), (0,1), "CENTER"),   
+            ("VALIGN", (0,0), (0,0), "BOTTOM"), ("VALIGN", (0,1), (0,1), "TOP"), 
+            ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
+            ("TOPPADDING", (0,0), (0,0), 0), ("BOTTOMPADDING", (0,0), (0,0), 0),
+            ("TOPPADDING", (0,1), (0,1), GAP_IMG_PRECIOS), ("BOTTOMPADDING", (0,1), (0,1), 0), 
         ]))
     else:
         col_izquierda = Table([[img]], colWidths=[ancho_bloque_izq], rowHeights=[alto_celda])
-        col_izquierda.setStyle(TableStyle([
-            ("ALIGN", (0,0), (-1,-1), "CENTER"),
-            ("VALIGN", (0,0), (-1,-1), "BOTTOM")  # También al fondo si no hay precios
-        ]))
+        col_izquierda.setStyle(TableStyle([("ALIGN", (0,0), (-1,-1), "CENTER"), ("VALIGN", (0,0), (-1,-1), "BOTTOM")]))
 
-    # --- TEXTOS DE LA DERECHA ---
     nombre = Paragraph(str(row.get("Nombre del producto", "")), style_nombre)
-    
     categoria_txt = str(row.get("Categoría", "")).strip()
     categoria_prod = Paragraph(categoria_txt.upper(), style_categoria_producto) if categoria_txt and categoria_txt.lower() != "nan" else ""
     
@@ -234,94 +377,56 @@ def celda_producto(row, ancho_celda, alto_celda):
     if desc_txt and desc_txt.lower() != "nan":
         frases = desc_txt.replace(". ", "||").split("||")
         frases = [f.strip() for f in frases if f.strip()]
-        if frases and not desc_txt.endswith("."):
-            frases[-1] += "."
-            
-        beneficios_html = ""
-        for frase in frases:
-            beneficios_html += f"<font color='#28a745'>✔</font> {frase}<br/>"
-            
+        if frases and not desc_txt.endswith("."): frases[-1] += "."
+        beneficios_html = "".join([f"<font color='#28a745'>✔</font> {frase}<br/>" for frase in frases])
         desc = Paragraph(beneficios_html, style_desc)
     else:
         desc = ""
         
     activos_txt = str(row.get("Activos principales", "")).strip()
     activos = Paragraph(f"<b>ACTIVOS:</b> {activos_txt}" if activos_txt and activos_txt.lower() != "nan" else "", style_modo)
-    
     modo_txt = str(row.get("Modo de uso", "")).strip()
     modo = Paragraph(f"<b>MODO DE USO:</b> {modo_txt}" if modo_txt and modo_txt.lower() != "nan" else "", style_modo)
 
     margen_total = 15
     ancho_real_texto = ancho_col_derecha - margen_total
 
-    texto_derecha = Table(
-        [[nombre], [categoria_prod], [desc], [activos], [modo]],
-        colWidths=[ancho_real_texto]
-    )
+    texto_derecha = Table([[nombre], [categoria_prod], [desc], [activos], [modo]], colWidths=[ancho_real_texto])
     texto_derecha.setStyle(TableStyle([
         ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "TOP"),
         ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
-        ("TOPPADDING", (0,0), (-1,-1), 0), 
-        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
-        ("BOTTOMPADDING", (0,1), (-1,1), 6),
-        ("BOTTOMPADDING", (0,2), (-1,2), 6),
-        ("BOTTOMPADDING", (0,3), (-1,3), 6),
+        ("TOPPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 2), 
+        ("BOTTOMPADDING", (0,1), (-1,1), 6), ("BOTTOMPADDING", (0,2), (-1,2), 6), ("BOTTOMPADDING", (0,3), (-1,3), 6), 
     ]))
 
-    contenido = Table(
-        [[col_izquierda, texto_derecha]], 
-        colWidths=[ancho_bloque_izq, ancho_col_derecha], 
-        rowHeights=[alto_celda]
-    )
+    contenido = Table([[col_izquierda, texto_derecha]], colWidths=[ancho_bloque_izq, ancho_col_derecha], rowHeights=[alto_celda])
     contenido.setStyle(TableStyle([
-        ("ALIGN", (0,0), (0,0), "CENTER"), 
-        ("VALIGN", (0,0), (0,0), "MIDDLE"), 
-        ("ALIGN", (1,0), (1,0), "LEFT"), 
-        ("VALIGN", (1,0), (1,0), "MIDDLE"), 
+        ("ALIGN", (0,0), (0,0), "CENTER"), ("VALIGN", (0,0), (0,0), "MIDDLE"), 
+        ("ALIGN", (1,0), (1,0), "LEFT"), ("VALIGN", (1,0), (1,0), "MIDDLE"), 
         ("LEFTPADDING", (0,0), (0,0), 5), ("RIGHTPADDING", (0,0), (0,0), 0),
         ("LEFTPADDING", (1,0), (1,0), 10), ("RIGHTPADDING", (1,0), (1,0), 5), 
         ("TOPPADDING", (0,0), (-1,-1), 10), ("BOTTOMPADDING", (0,0), (-1,-1), 10),
         ("BOX", (0,0), (-1,-1), 2.5, COLOR_DORADO), ("ROUNDEDCORNERS", [8, 8, 8, 8]),
     ]))
     return contenido
-# ============================================================
-# PÁGINA DE PRODUCTOS (Cuadrícula 2x2)
-# ============================================================
+
 def pagina_productos(productos):
     ancho_util = A4[0] - 2.0*cm 
     alto_util  = A4[1] - 5.5*cm 
-    
-    gap_x = 0.5*cm
-    gap_y = 0.4*cm
-    
+    gap_x, gap_y = 0.5*cm, 0.4*cm
     ancho_celda = (ancho_util - gap_x) / 2
     alto_celda = (alto_util - gap_y) / 2
 
     celdas = [celda_producto(p, ancho_celda, alto_celda) for p in productos]
     while len(celdas) < 4: celdas.append("")
 
-    grid = Table(
-        [
-            [celdas[0], celdas[1]],
-            [celdas[2], celdas[3]]
-        ],
-        colWidths=[ancho_celda, ancho_celda],
-        rowHeights=[alto_celda, alto_celda]
-    )
-    
+    grid = Table([[celdas[0], celdas[1]], [celdas[2], celdas[3]]], colWidths=[ancho_celda, ancho_celda], rowHeights=[alto_celda, alto_celda])
     grid.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"), 
-        ("ALIGN", (0,0), (-1,-1), "LEFT"),
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"), ("ALIGN", (0,0), (-1,-1), "LEFT"),
         ("LEFTPADDING", (0,0), (-1,-1), gap_x/2), ("RIGHTPADDING", (0,0), (-1,-1), gap_x/2),
         ("TOPPADDING", (0,0), (-1,-1), gap_y/2), ("BOTTOMPADDING", (0,0), (-1,-1), gap_y/2),
     ]))
     return grid
-
-# ============================================================
-# ENCABEZADOS
-# ============================================================
-def header_limpio(canvas, doc):
-    pass
 
 def header_footer_dinamico(canvas, doc, bg_color):
     canvas.saveState()
@@ -353,92 +458,91 @@ def header_footer_dinamico(canvas, doc, bg_color):
     canvas.setFont("Helvetica", 7.5)
     canvas.setFillColor(colors.grey)
     canvas.drawString(1.5*cm, 0.9*cm, EMPRESA)
-    canvas.drawRightString(A4[0]-1.5*cm, 0.9*cm, f"Página {doc.page}")
+    
+    num_pagina_real = doc.page + OFFSET_PAGINAS
+    canvas.drawRightString(A4[0]-1.5*cm, 0.9*cm, f"Página {num_pagina_real}")
     canvas.restoreState()
 
-# ============================================================
-# GENERACIÓN DEL PDF Y FUSIÓN
-# ============================================================
-def generar_y_fusionar():
-    df = cargar_datos(EXCEL_PATH)
-    tipos_colores = cargar_tipos(TIPOS_PATH)
-    grupos = agrupar_por_tipo(df)
-
+def generar_pdf_productos(productos, tipos_data, output_path):
     doc = BaseDocTemplate(
-        OUTPUT_PDF, pagesize=A4,
+        output_path, pagesize=A4,
         leftMargin=1.0*cm, rightMargin=1.0*cm,
         topMargin=3.5*cm, bottomMargin=1.8*cm, 
-        title=f"{EMPRESA} - {SUBTITULO}", author=EMPRESA,
     )
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="normal", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
     
-    # 1. Registramos la plantilla limpia (para separadores o portada)
-    doc.addPageTemplates([PageTemplate(id="limpia", frames=[frame], onPage=header_limpio)])
-
-    # 2. Pre-configuramos la plantilla del PRIMER tipo
-    primer_tipo, primeros_prods = grupos[0]
-    color_hex = tipos_colores.get(primer_tipo, "#1F3864")
-    color_fondo = obtener_color_hex(color_hex, COLOR_PRIMARIO)
-    
-    def crear_header_inicial(t_name, bg_col):
-        def custom_header(canvas, doc):
-            doc._tipo_actual = t_name
-            header_footer_dinamico(canvas, doc, bg_col)
-        return custom_header
-
-    # Registramos la plantilla "p1" y la asignamos como la plantilla por defecto del documento
-    doc.addPageTemplates([
-        PageTemplate(id="p1", frames=[frame], onPage=crear_header_inicial(primer_tipo, color_fondo))
-    ])
-    doc._firstPageTemplateIndex = 1 # Forzamos a que use la plantilla p1 (la de índice 1) en la primera página
-
     story = []
 
-    for idx, (tipo, prods) in enumerate(grupos, start=1):
-        if idx > 1:
-            # Para los tipos 2 en adelante, creamos su plantilla, la asignamos y saltamos de página
-            color_hex = tipos_colores.get(tipo, "#1F3864")
-            color_fondo = obtener_color_hex(color_hex, COLOR_PRIMARIO)
-            nombre_plantilla_prods = f"prods_{idx}"
-            
-            def crear_header_con_datos(t_name, bg_col):
-                def custom_header(canvas, doc):
-                    doc._tipo_actual = t_name
-                    header_footer_dinamico(canvas, doc, bg_col)
-                return custom_header
+    for i in range(0, len(productos), 4):
+        pagina = productos[i:i+4]
+        tipo_pagina = pagina[0]["Tipo"]
+        
+        color_hex = tipos_data.get(tipo_pagina, {}).get("color", "#1F3864")
+        color_fondo = obtener_color_hex(color_hex, COLOR_PRIMARIO)
+        nombre_plantilla = f"pag_{i}"
+        
+        def crear_header_con_datos(t_name, bg_col):
+            def custom_header(canvas, doc):
+                doc._tipo_actual = t_name
+                header_footer_dinamico(canvas, doc, bg_col)
+            return custom_header
 
-            doc.addPageTemplates([PageTemplate(id=nombre_plantilla_prods, frames=[frame], onPage=crear_header_con_datos(tipo, color_fondo))])
-            
-            story.append(NextPageTemplate(nombre_plantilla_prods))
+        doc.addPageTemplates([PageTemplate(id=nombre_plantilla, frames=[frame], onPage=crear_header_con_datos(tipo_pagina, color_fondo))])
+        
+        story.append(NextPageTemplate(nombre_plantilla))
+        if i > 0:
             story.append(PageBreak())
 
-        # Imprimimos los productos de este tipo
-        for i in range(0, len(prods), 4):
-            grid = pagina_productos(prods[i:i+4])
-            story.append(grid)
-            if i + 4 < len(prods):
-                story.append(PageBreak())
-            
-        # Al terminar el tipo, volvemos a la plantilla limpia para el próximo cambio
-        story.append(NextPageTemplate("limpia"))
-        
+        grid = pagina_productos(pagina)
+        story.append(grid)
+
+    doc._firstPageTemplateIndex = 1
     doc.build(story)
-    print(f"📄 Cuerpo del catálogo generado temporalmente: {OUTPUT_PDF}")
+
+# ============================================================
+# GENERACIÓN Y FUSIÓN FINAL
+# ============================================================
+def generar_y_fusionar():
+    global OFFSET_PAGINAS
+    
+    print("📊 Cargando datos...")
+    productos = cargar_datos(EXCEL_PATH)
+    tipos_data = cargar_tipos(TIPOS_PATH)
+
+    OFFSET_PAGINAS = 2 if os.path.exists(PORTADA_PDF) else 1
+
+    print("📄 Generando Índice...")
+    generar_pdf_indice(productos, tipos_data, OUTPUT_INDICE)
+
+    print("📄 Generando Productos...")
+    generar_pdf_productos(productos, tipos_data, OUTPUT_PRODS)
+
+    print("🖇️  Fusionando todo (Portada + Índice + Productos)...")
+    writer = PdfWriter()
 
     if os.path.exists(PORTADA_PDF):
-        print(f"🖇️  Añadiendo la portada '{PORTADA_PDF}' al inicio...")
-        writer = PdfWriter()
         reader_portada = PdfReader(PORTADA_PDF)
-        for page in reader_portada.pages: writer.add_page(page)
-        reader_catalogo = PdfReader(OUTPUT_PDF)
-        for page in reader_catalogo.pages: writer.add_page(page)
-        with open(OUTPUT_FINAL, "wb") as f: writer.write(f)
-        print(f"✅ ¡Catálogo Final generado exitosamente!: {OUTPUT_FINAL}")
-        os.remove(OUTPUT_PDF)
-    else:
-        print(f"⚠️ No se encontró '{PORTADA_PDF}'. El catálogo se generó sin portada.")
-        os.rename(OUTPUT_PDF, OUTPUT_FINAL)
-        print(f"✅ Catálogo Final (sin portada): {OUTPUT_FINAL}")
+        for page in reader_portada.pages: 
+            writer.add_page(page)
+
+    if os.path.exists(OUTPUT_INDICE):
+        reader_indice = PdfReader(OUTPUT_INDICE)
+        for page in reader_indice.pages: 
+            writer.add_page(page)
+        
+    if os.path.exists(OUTPUT_PRODS):
+        reader_prods = PdfReader(OUTPUT_PRODS)
+        for page in reader_prods.pages: 
+            writer.add_page(page)
+
+    with open(OUTPUT_FINAL, "wb") as f:
+        writer.write(f)
+        
+    print(f"✅ ¡Catálogo Final generado exitosamente!: {OUTPUT_FINAL}")
+
+    for tmp in [OUTPUT_INDICE, OUTPUT_PRODS]:
+        if os.path.exists(tmp): 
+            os.remove(tmp)
 
 if __name__ == "__main__":
     generar_y_fusionar()
