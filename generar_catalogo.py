@@ -16,6 +16,8 @@ from reportlab.platypus import (
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from PIL import Image as PILImage
 from pypdf import PdfWriter, PdfReader
 
@@ -45,6 +47,24 @@ SUBTITULO = "Catálogo de Productos"
 OFFSET_PAGINAS = 0
 
 # ============================================================
+# REGISTRO DE FUENTES (Open Sans Variables)
+# ============================================================
+try:
+    # Registramos el archivo variable como 'OpenSans' y 'OpenSans-Bold'
+    pdfmetrics.registerFont(TTFont('OpenSans', os.path.join('font', 'OpenSans-VariableFont_wdth,wght.ttf')))
+    pdfmetrics.registerFont(TTFont('OpenSans-Bold', os.path.join('font', 'OpenSans-VariableFont_wdth,wght.ttf')))
+    
+    # Al registrar el mismo archivo con dos nombres, ReportLab usa el peso por defecto (Regular).
+    # Para forzar el Bold en la fuente variable, usamos un truco de nombres.
+    # Le decimos que 'OpenSans-Bold' es una variante de 'OpenSans' con el peso máximo.
+    from reportlab.pdfbase.pdfmetrics import registerFontFamily
+    registerFontFamily('OpenSans', normal='OpenSans', bold='OpenSans-Bold')
+    
+    print("✅ Fuentes Open Sans (Variable) cargadas correctamente.")
+except Exception as e:
+    print(f"⚠️ No se pudieron cargar las fuentes: {e}. Se usará Helvetica por defecto.")
+
+# ============================================================
 # ESTILOS
 # ============================================================
 styles = getSampleStyleSheet()
@@ -59,8 +79,10 @@ style_tabla_precio = ParagraphStyle("tabla_precio", parent=styles["Normal"], fon
 # Estilos Índice
 style_index_texto_unico = ParagraphStyle(
     "index_texto_unico", parent=styles["Normal"],
-    fontName="Helvetica-Oblique", fontSize=14, leading=16, 
-    textColor=COLOR_PRIMARIO, spaceAfter=20
+    fontName="OpenSans-Bold", # Usamos la variante que acabamos de forzar
+    fontSize=15, leading=18, 
+    textColor=COLOR_PRIMARIO, 
+    spaceAfter=20
 )
 style_index_tipo = ParagraphStyle("index_tipo", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8, leading=10, textColor=COLOR_TEXTO, alignment=TA_CENTER)
 style_index_paginas = ParagraphStyle("index_paginas", parent=styles["Normal"], fontName="Helvetica", fontSize=7.5, leading=9, textColor=colors.HexColor("#666666"), alignment=TA_CENTER)
@@ -132,7 +154,7 @@ def cargar_tipos(path):
         return {}
 
 # ============================================================
-# CLASE PERSONALIZADA PARA DIBUJAR LA CUADRÍCULA (SOLUCIÓN DEFINITIVA)
+# CLASE PERSONALIZADA PARA DIBUJAR LA CUADRÍCULA
 # ============================================================
 class CuadriculaIndice(Flowable):
     def __init__(self, tipos_unicos, paginas_por_tipo, tipos_data, margen_izq_frame):
@@ -141,7 +163,6 @@ class CuadriculaIndice(Flowable):
         self.paginas = paginas_por_tipo
         self.data = tipos_data
         
-        # Ancho real de la hoja A4
         self.ancho_hoja = A4[0]
         
         self.ancho_caja = 4.5 * cm
@@ -149,17 +170,13 @@ class CuadriculaIndice(Flowable):
         self.espacio_x = 0.8 * cm
         self.espacio_y = 0.5 * cm
         
-        # Cálculo del ancho total de la cuadrícula (3 columnas)
         self.ancho_total = (self.ancho_caja * 3) + (self.espacio_x * 2)
-        
-        # EL TRUCO: Restamos el margen izquierdo del Frame para que la coordenada 0 sea el borde real del papel
         self.x_inicial = ((self.ancho_hoja - self.ancho_total) / 2) - margen_izq_frame
         
         self.filas = (len(self.tipos) + 2) // 3
         self.alto_total = (self.alto_caja * self.filas) + (self.espacio_y * (self.filas - 1))
 
     def wrap(self, availWidth, availHeight):
-        # Retornamos el ancho que ReportLab espera. Le pasamos el ancho del frame.
         return (availWidth, self.alto_total)
 
     def draw(self):
@@ -169,14 +186,12 @@ class CuadriculaIndice(Flowable):
             col = i % 3
             fila = i // 3
             
-            # Centrar la caja si es la última fila y solo hay 1 elemento
             if fila == self.filas - 1 and len(self.tipos) % 3 == 1:
                 col = 1
             
             x_pos = self.x_inicial + (col * (self.ancho_caja + self.espacio_x))
             y_pos = self.alto_total - (fila * (self.alto_caja + self.espacio_y)) - self.alto_caja
 
-            # Obtener datos del tipo
             paginas = self.paginas.get(tipo, [])
             if paginas:
                 if len(paginas) == 1: rango_str = str(paginas[0])
@@ -215,37 +230,35 @@ class CuadriculaIndice(Flowable):
                         canvas.drawImage(ruta, centro_x - (1.0*cm)/2, y_pos + self.alto_caja - 2.5*cm, width=1.0*cm, height=1.0*cm, mask='auto')
                     except: pass
             
-            # Textos
+            # Textos con tamaño aumentado
             canvas.setFillColor(COLOR_TEXTO)
-            canvas.setFont("Helvetica-Bold", 8)
+            canvas.setFont("Helvetica-Bold", 9) 
             canvas.drawCentredString(centro_x, y_pos + 0.9*cm, tipo.upper())
             
             texto_pags = "Págs. "
-            ancho_pags = canvas.stringWidth(texto_pags, "Helvetica", 8)
-            ancho_num = canvas.stringWidth(rango_str, "Helvetica-Bold", 11)
+            ancho_pags = canvas.stringWidth(texto_pags, "Helvetica", 8.5) 
+            ancho_num = canvas.stringWidth(rango_str, "Helvetica-Bold", 12) 
             ancho_total_texto = ancho_pags + ancho_num
             
             inicio_x = centro_x - (ancho_total_texto / 2)
             
             canvas.setFillColor(colors.HexColor("#555555"))
-            canvas.setFont("Helvetica", 8)
+            canvas.setFont("Helvetica", 8.5) 
             canvas.drawString(inicio_x, y_pos + 0.4*cm, texto_pags)
             
             canvas.setFillColor(COLOR_TEXTO)
-            canvas.setFont("Helvetica-Bold", 11)
+            canvas.setFont("Helvetica-Bold", 12) 
             canvas.drawString(inicio_x + ancho_pags, y_pos + 0.4*cm, rango_str)
 
 # ============================================================
 # DISEÑO DE LA PÁGINA DE ÍNDICE
 # ============================================================
 def generar_pdf_indice(productos, tipos_data, output_path):
-    # Alineamos los márgenes del Frame a 3 cm para que coincidan con la cuadrícula
     doc = BaseDocTemplate(
         output_path, pagesize=A4,
         leftMargin=3.0*cm, rightMargin=3.0*cm,
         topMargin=3.0*cm, bottomMargin=2.0*cm, 
     )
-    # El Frame ocupará exactamente 15 cm de ancho (21 - 3 - 3)
     frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="normal", leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0)
     doc.addPageTemplates([PageTemplate(id="limpia", frames=[frame], onPage=lambda canvas, doc: None)])
 
@@ -269,7 +282,6 @@ def generar_pdf_indice(productos, tipos_data, output_path):
     )
     texto_catalogo = Paragraph("CATÁLOGO", style_catalogo_grande)
 
-    # Usamos el ancho exacto del Frame (15cm) para que la cabecera encaje
     tabla_header = Table([[logo_img, texto_catalogo]], colWidths=[doc.width * 0.5, doc.width * 0.5])
     tabla_header.setStyle(TableStyle([
         ("VALIGN", (0,0), (0,0), "MIDDLE"), ("VALIGN", (1,0), (1,0), "MIDDLE"),
@@ -282,7 +294,7 @@ def generar_pdf_indice(productos, tipos_data, output_path):
     elementos.append(tabla_header)
     elementos.append(Spacer(1, 1.5*cm))
     
-    # --- TEXTO ÚNICO CENTRAL ---
+    # --- TEXTO ÚNICO CENTRAL (Con Open Sans Variable - Bold) ---
     elementos.append(Paragraph("Encuentra la solución en segundos", style_index_texto_unico))
     elementos.append(Spacer(1, 0.5*cm))
 
@@ -302,7 +314,6 @@ def generar_pdf_indice(productos, tipos_data, output_path):
     for p in productos:
         if p["Tipo"] not in tipos_unicos: tipos_unicos.append(p["Tipo"])
 
-    # Le pasamos doc.leftMargin a la clase para que sepa cuánto restar
     cuadricula = CuadriculaIndice(tipos_unicos, paginas_por_tipo, tipos_data, doc.leftMargin)
     elementos.append(cuadricula)
     
