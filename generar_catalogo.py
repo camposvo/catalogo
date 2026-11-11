@@ -50,13 +50,9 @@ OFFSET_PAGINAS = 0
 # REGISTRO DE FUENTES (Open Sans Variables)
 # ============================================================
 try:
-    # Registramos el archivo variable como 'OpenSans' y 'OpenSans-Bold'
     pdfmetrics.registerFont(TTFont('OpenSans', os.path.join('font', 'OpenSans-VariableFont_wdth,wght.ttf')))
     pdfmetrics.registerFont(TTFont('OpenSans-Bold', os.path.join('font', 'OpenSans-VariableFont_wdth,wght.ttf')))
     
-    # Al registrar el mismo archivo con dos nombres, ReportLab usa el peso por defecto (Regular).
-    # Para forzar el Bold en la fuente variable, usamos un truco de nombres.
-    # Le decimos que 'OpenSans-Bold' es una variante de 'OpenSans' con el peso máximo.
     from reportlab.pdfbase.pdfmetrics import registerFontFamily
     registerFontFamily('OpenSans', normal='OpenSans', bold='OpenSans-Bold')
     
@@ -70,8 +66,22 @@ except Exception as e:
 styles = getSampleStyleSheet()
 
 style_nombre = ParagraphStyle("nombre", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=10, leading=12, textColor=COLOR_PRIMARIO, spaceAfter=2)
-style_categoria_producto = ParagraphStyle("categoria_producto", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=7, leading=8.5, textColor=COLOR_DORADO, spaceAfter=3)
-style_desc = ParagraphStyle("desc", parent=styles["Normal"], fontName="Helvetica", fontSize=7.5, leading=9.5, textColor=COLOR_TEXTO, spaceAfter=4)
+
+# Categoría en Gris Oscuro
+style_categoria_producto = ParagraphStyle(
+    "categoria_producto", parent=styles["Normal"], 
+    fontName="Helvetica-Bold", fontSize=7, leading=8.5, 
+    textColor=colors.HexColor("#666666"), 
+    spaceAfter=3
+)
+
+# Descripción con interlineado original (9.5)
+style_desc = ParagraphStyle(
+    "desc", parent=styles["Normal"], 
+    fontName="Helvetica", fontSize=7.5, leading=9.5, 
+    textColor=COLOR_TEXTO, spaceAfter=4
+)
+
 style_modo = ParagraphStyle("modo", parent=styles["Normal"], fontName="Helvetica", fontSize=7, leading=9, textColor=colors.HexColor("#444444"), spaceAfter=4)
 style_tabla_nombre = ParagraphStyle("tabla_nombre", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=6, leading=7.5, textColor=colors.black, alignment=TA_CENTER)
 style_tabla_precio = ParagraphStyle("tabla_precio", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=11, textColor=colors.black, alignment=TA_CENTER)
@@ -79,7 +89,7 @@ style_tabla_precio = ParagraphStyle("tabla_precio", parent=styles["Normal"], fon
 # Estilos Índice
 style_index_texto_unico = ParagraphStyle(
     "index_texto_unico", parent=styles["Normal"],
-    fontName="OpenSans-Bold", # Usamos la variante que acabamos de forzar
+    fontName="OpenSans-Bold",
     fontSize=15, leading=18, 
     textColor=COLOR_PRIMARIO, 
     spaceAfter=20
@@ -389,11 +399,24 @@ def celda_producto(row, ancho_celda, alto_celda):
         frases = desc_txt.replace(". ", "||").split("||")
         frases = [f.strip() for f in frases if f.strip()]
         if frases and not desc_txt.endswith("."): frases[-1] += "."
-        beneficios_html = "".join([f"<font color='#28a745'>✔</font> {frase}<br/>" for frase in frases])
-        desc = Paragraph(beneficios_html, style_desc)
-    else:
-        desc = ""
         
+        # Usamos una tabla contenedora para controlar el padding exacto entre beneficios
+        elementos_beneficios = []
+        for frase in frases:
+            p_beneficio = Paragraph(f"<font color='#888888'>✔</font> {frase}", style_desc)
+            elementos_beneficios.append(p_beneficio)
+        
+        tabla_beneficios = Table([[b] for b in elementos_beneficios], colWidths=[ancho_col_derecha - 15])
+        tabla_beneficios.setStyle(TableStyle([
+            ("LEFTPADDING", (0,0), (-1,-1), 0),
+            ("RIGHTPADDING", (0,0), (-1,-1), 0),
+            ("TOPPADDING", (0,0), (-1,-1), 0),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 3), # <--- ESTE ES EL ESPACIO ENTRE CHECKS (3 pt)
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ]))
+    else:
+        tabla_beneficios = ""
+
     activos_txt = str(row.get("Activos principales", "")).strip()
     activos = Paragraph(f"<b>ACTIVOS:</b> {activos_txt}" if activos_txt and activos_txt.lower() != "nan" else "", style_modo)
     modo_txt = str(row.get("Modo de uso", "")).strip()
@@ -402,22 +425,25 @@ def celda_producto(row, ancho_celda, alto_celda):
     margen_total = 15
     ancho_real_texto = ancho_col_derecha - margen_total
 
-    texto_derecha = Table([[nombre], [categoria_prod], [desc], [activos], [modo]], colWidths=[ancho_real_texto])
+    texto_derecha = Table([[nombre], [categoria_prod], [tabla_beneficios], [activos], [modo]], colWidths=[ancho_real_texto])
     texto_derecha.setStyle(TableStyle([
         ("ALIGN", (0,0), (-1,-1), "LEFT"), ("VALIGN", (0,0), (-1,-1), "TOP"),
         ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
         ("TOPPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 2), 
-        ("BOTTOMPADDING", (0,1), (-1,1), 6), ("BOTTOMPADDING", (0,2), (-1,2), 6), ("BOTTOMPADDING", (0,3), (-1,3), 6), 
+        ("BOTTOMPADDING", (0,1), (-1,1), 6), 
+        ("BOTTOMPADDING", (0,2), (-1,2), 6), # Margen después de los beneficios
+        ("BOTTOMPADDING", (0,3), (-1,3), 6), 
     ]))
 
     contenido = Table([[col_izquierda, texto_derecha]], colWidths=[ancho_bloque_izq, ancho_col_derecha], rowHeights=[alto_celda])
+    # Borde dorado fino (0.8)
     contenido.setStyle(TableStyle([
         ("ALIGN", (0,0), (0,0), "CENTER"), ("VALIGN", (0,0), (0,0), "MIDDLE"), 
         ("ALIGN", (1,0), (1,0), "LEFT"), ("VALIGN", (1,0), (1,0), "MIDDLE"), 
         ("LEFTPADDING", (0,0), (0,0), 5), ("RIGHTPADDING", (0,0), (0,0), 0),
         ("LEFTPADDING", (1,0), (1,0), 10), ("RIGHTPADDING", (1,0), (1,0), 5), 
         ("TOPPADDING", (0,0), (-1,-1), 10), ("BOTTOMPADDING", (0,0), (-1,-1), 10),
-        ("BOX", (0,0), (-1,-1), 2.5, COLOR_DORADO), ("ROUNDEDCORNERS", [8, 8, 8, 8]),
+        ("BOX", (0,0), (-1,-1), 0.8, COLOR_DORADO), ("ROUNDEDCORNERS", [8, 8, 8, 8]),
     ]))
     return contenido
 
