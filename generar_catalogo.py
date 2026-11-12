@@ -82,7 +82,13 @@ style_desc = ParagraphStyle(
     textColor=COLOR_TEXTO, spaceAfter=4
 )
 
-style_modo = ParagraphStyle("modo", parent=styles["Normal"], fontName="Helvetica", fontSize=7, leading=9, textColor=colors.HexColor("#444444"), spaceAfter=4)
+# NUEVO: Estilo unificado para Activos Destacados y Modo de Uso
+style_etiquetas = ParagraphStyle(
+    "etiquetas", parent=styles["Normal"], 
+    fontName="Helvetica", fontSize=6.5, leading=8.5, 
+    textColor=colors.HexColor("#444444"), spaceAfter=4
+)
+
 style_tabla_nombre = ParagraphStyle("tabla_nombre", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=6, leading=7.5, textColor=colors.black, alignment=TA_CENTER)
 style_tabla_precio = ParagraphStyle("tabla_precio", parent=styles["Normal"], fontName="Helvetica", fontSize=8.5, leading=11, textColor=colors.black, alignment=TA_CENTER)
 
@@ -400,7 +406,6 @@ def celda_producto(row, ancho_celda, alto_celda):
         frases = [f.strip() for f in frases if f.strip()]
         if frases and not desc_txt.endswith("."): frases[-1] += "."
         
-        # Usamos una tabla contenedora para controlar el padding exacto entre beneficios
         elementos_beneficios = []
         for frase in frases:
             p_beneficio = Paragraph(f"<font color='#888888'>✔</font> {frase}", style_desc)
@@ -411,16 +416,18 @@ def celda_producto(row, ancho_celda, alto_celda):
             ("LEFTPADDING", (0,0), (-1,-1), 0),
             ("RIGHTPADDING", (0,0), (-1,-1), 0),
             ("TOPPADDING", (0,0), (-1,-1), 0),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 3), # <--- ESTE ES EL ESPACIO ENTRE CHECKS (3 pt)
+            ("BOTTOMPADDING", (0,0), (-1,-1), 3),
             ("VALIGN", (0,0), (-1,-1), "TOP"),
         ]))
     else:
         tabla_beneficios = ""
 
+    # NUEVOS TEXTOS CON ETIQUETAS
     activos_txt = str(row.get("Activos principales", "")).strip()
-    activos = Paragraph(f"<b>ACTIVOS:</b> {activos_txt}" if activos_txt and activos_txt.lower() != "nan" else "", style_modo)
+    activos = Paragraph(f"<b>ACTIVOS DESTACADOS:</b> {activos_txt}" if activos_txt and activos_txt.lower() != "nan" else "", style_etiquetas)
+    
     modo_txt = str(row.get("Modo de uso", "")).strip()
-    modo = Paragraph(f"<b>MODO DE USO:</b> {modo_txt}" if modo_txt and modo_txt.lower() != "nan" else "", style_modo)
+    modo = Paragraph(f"<b>MODO DE USO:</b> {modo_txt}" if modo_txt and modo_txt.lower() != "nan" else "", style_etiquetas)
 
     margen_total = 15
     ancho_real_texto = ancho_col_derecha - margen_total
@@ -431,12 +438,11 @@ def celda_producto(row, ancho_celda, alto_celda):
         ("LEFTPADDING", (0,0), (-1,-1), 0), ("RIGHTPADDING", (0,0), (-1,-1), 0),
         ("TOPPADDING", (0,0), (-1,-1), 0), ("BOTTOMPADDING", (0,0), (-1,-1), 2), 
         ("BOTTOMPADDING", (0,1), (-1,1), 6), 
-        ("BOTTOMPADDING", (0,2), (-1,2), 6), # Margen después de los beneficios
+        ("BOTTOMPADDING", (0,2), (-1,2), 6),
         ("BOTTOMPADDING", (0,3), (-1,3), 6), 
     ]))
 
     contenido = Table([[col_izquierda, texto_derecha]], colWidths=[ancho_bloque_izq, ancho_col_derecha], rowHeights=[alto_celda])
-    # Borde dorado fino (0.8)
     contenido.setStyle(TableStyle([
         ("ALIGN", (0,0), (0,0), "CENTER"), ("VALIGN", (0,0), (0,0), "MIDDLE"), 
         ("ALIGN", (1,0), (1,0), "LEFT"), ("VALIGN", (1,0), (1,0), "MIDDLE"), 
